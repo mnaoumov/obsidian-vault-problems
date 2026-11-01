@@ -1,0 +1,11 @@
+{
+  "author": "mnaoumov",
+  "authorUrl": "https://github.com/mnaoumov/",
+  "description": "Catches a broken link or a broken frontmatter the moment it breaks, fixes what is unambiguous, and lists every vault problem in one view with quick fixes.",
+  "fundingUrl": "https://www.buymeacoffee.com/mnaoumov",
+  "id": "vault-problems",
+  "isDesktopOnly": false,
+  "minAppVersion": "1.14.5",
+  "name": "Vault Problems",
+  "version": "0.0.0"
+}
