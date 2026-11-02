@@ -34,13 +34,17 @@ Searched on 2026-11-01: the community registry (9801 plugins) for the vocabulary
 
 ## Current state
 
-The repo was generated on 2026-11-01 with `create-obsidian-plugin` (preset `all-in-one`, desktop and mobile, the unofficial API subset, CodeMirror editor extensions). Its answers are in `.create-obsidian-plugin.json`. Nothing of the design below is built yet; the scaffold's sample commands, setting, editor extensions and suggest are still in place.
+The repo was generated on 2026-11-01 with `create-obsidian-plugin` (preset `all-in-one`, desktop and mobile, the unofficial API subset, CodeMirror editor extensions). Its answers are in `.create-obsidian-plugin.json`.
+
+The link engine is implemented in `src/link-engine.ts`, with its shared model in `src/link-model.ts` and lifecycle subscriptions in `src/link-engine-component.ts`. `Plugin.linkEngine` exposes rows and problems per note and an `onChanged` subscription. Startup takes one snapshot; later changes use core backlinks plus reverse indexes retained by the engine. New breaks keep their cause until repaired and produce a plugin-owned notice. File renames and deletions are compared after the metadata resolver settles. `runInBatch` and `updateMany` compare a batch once; automatic observation of another plugin's rename-handler batches requires provider lifecycle notifications that its current public API does not expose.
+
+The sample commands, setting, editor extensions and suggest have been removed. The Problems view, repairs, syntax checks and editor diagnostics described below are not implemented yet. The demo vault demonstrates a heading edit and restoration. Unit tests run with `npm run test:coverage`; the live heading/deletion scenario runs with `npx vitest run --project integration-tests:desktop src/link-engine.cross-platform.integration.test.ts` (or the Android project).
 
 ## Design
 
 ### Engine: a link snapshot, diffed per change
 
-1. The link table is built from the metadata cache: `links`, `embeds`, `frontmatterLinks` and `references` for every note, each with its resolved target (file, heading, block) or none.
+1. The link table is built from the metadata cache: `links`, `embeds`, `frontmatterLinks` and `referenceLinks` (reference-style links) for every note, each with its resolved target (file, heading, block) or none.
 2. On every `changed`, `rename`, `delete` and `resolved` event, the engine recomputes only the rows the event can touch: the changed note's own links, and the links whose target is the changed note (through the backlink index). The vault-wide scan runs once, at layout ready.
 3. A row that resolved before the event and does not after it is a **new break**, attributed to that event. A row that never resolved is a **standing problem**. The view shows both; only a new break raises a notice.
 4. A batch of operations from `Advanced Rename and Delete Handler` (its `runInBatch` API) is one change: the diff runs once, at the end of the batch, so a folder move is one report, not hundreds.

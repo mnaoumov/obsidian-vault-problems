@@ -1,31 +1,15 @@
 # Start here
 
-This is an [Obsidian](https://obsidian.md/) vault that documents the [Vault Problems](https://github.com/mnaoumov/obsidian-vault-problems/) plugin by demonstrating it. Every feature has a note that says what it does and why you would want it, and a button you can press to watch it happen.
+This vault demonstrates [Vault Problems](https://github.com/mnaoumov/obsidian-vault-problems/), live link analysis for [Obsidian](https://obsidian.md/).
 
-Catches a broken link or a broken frontmatter the moment it breaks, fixes what is unambiguous, and lists every vault problem in one view with quick fixes.
+The engine records every note's links, embeds, frontmatter links and reference-style links. When a note, heading, block or attachment stops resolving after an edit, it reports the new break immediately.
 
 ## Your first minute
 
-Below this paragraph is a **code button** — a captioned rectangle. It is not a picture of a button: **clicking it runs the code**, and the result appears underneath it. The `</>` toggle beside the caption reveals the code it runs, so nothing here is a black box.
+Open [01 Live links](<./01 Live links.md>) and press **Change the linked heading**. A notice names the link that just broke. Press **Restore the linked heading** to repair it.
 
-```code-button
----
-caption: Run the Sample command
----
-require('/demoSetup.ts').runSampleCommand(app);
-```
-
-A notice should have appeared in the top-right corner. That is the plugin's `Sample` command running — the same thing you get from **`Vault Problems`: Sample** in the Command Palette (`Ctrl+P` / `Cmd+P`).
-
-Every button in this vault also states its **manual equivalent**, so you learn the real steps rather than depending on the buttons.
-
-## Features
-
-| Note | What it covers |
-| --- | --- |
-| [01 Sample commands](<./01 Sample commands.md>) | The commands the plugin adds, and how to run them. |
-| [02 Settings](<./02 Settings.md>) | Every setting, by the key it is stored under in `data.json`. |
+The `</>` toggle beside a code button reveals its code. Every button also states its manual equivalent, so you can reproduce the edit yourself.
 
 ## Materials
 
-`Materials/` holds the notes the walkthroughs operate on, so you never have to build a fixture to see a feature working.
+The [source note](<./Materials/01 Live links/Source.md>) and [target note](<./Materials/01 Live links/Target.md>) supply the walkthrough's linked material.
