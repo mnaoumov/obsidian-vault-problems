@@ -1,0 +1,317 @@
+import type { AsyncEventRef } from '@mnaoumov/typescript-lib/async-events';
+import type {
+  App,
+  CachedMetadata,
+  Pos
+} from 'obsidian';
+
+import { AsyncEventsBase } from '@mnaoumov/typescript-lib/async-events';
+import { ensureNonNullable } from '@mnaoumov/typescript-lib/type-guards';
+import {
+  parseLinktext,
+  resolveSubpath
+} from 'obsidian';
+
+import type {
+  LinkChange,
+  LinkEngineChange,
+  LinkEngineEventMap,
+  LinkProblem,
+  LinkRow,
+  LinkTarget
+} from './link-model.ts';
+
+/**
+Collaborators for a metadata-backed link engine.
+*/
+export interface LinkEngineConstructorParams {
+  readonly app: App;
+  readonly notify: (problems: readonly LinkProblem[]) => void;
+}
+
+interface LinkReference {
+  readonly key: null | string;
+  readonly kind: LinkRow['kind'];
+  readonly link: string;
+  readonly position: null | Pos;
+}
+
+/**
+A live snapshot shared by the problems view, repairs and editor diagnostics.
+*/
+export class LinkEngine extends AsyncEventsBase<LinkEngineEventMap> {
+  private readonly app: App;
+  private batchDepth = 0;
+  private initialized = false;
+  private readonly names = new Map<string, Set<string>>();
+  private readonly notify: (problems: readonly LinkProblem[]) => void;
+  private readonly pending: LinkChange[] = [];
+  private readonly problems = new Map<string, readonly LinkProblem[]>();
+  private readonly rows = new Map<string, readonly LinkRow[]>();
+  private readonly targets = new Map<string, Set<string>>();
+
+  public constructor(params: LinkEngineConstructorParams) {
+    super();
+    this.app = params.app;
+    this.notify = params.notify;
+  }
+
+  /**
+  Current problems for a note, in metadata order.
+  */
+  public getProblems(sourcePath: string): readonly LinkProblem[] {
+    return this.problems.get(sourcePath) ?? [];
+  }
+
+  /**
+  Current rows for a note, in metadata order.
+  */
+  public getRows(sourcePath: string): readonly LinkRow[] {
+    return this.rows.get(sourcePath) ?? [];
+  }
+
+  /**
+  Takes the only vault-wide snapshot; repeated layout callbacks are harmless.
+  */
+  public initialize(): void {
+    if (this.initialized) {
+      return;
+    }
+    this.initialized = true;
+    const paths = this.app.vault.getMarkdownFiles().map((file) => file.path);
+    this.recompute(paths, null);
+  }
+
+  /**
+  Subscribes to atomic changes, including repairs and removed source notes.
+  */
+  public onChanged(callback: (change: LinkEngineChange) => void): AsyncEventRef {
+    return this.on('changed', callback);
+  }
+
+  /**
+  Defers all comparisons until the outermost operation finishes, even on failure.
+  */
+  public async runInBatch(operation: () => Promise<void>): Promise<void> {
+    this.batchDepth++;
+    try {
+      await operation();
+    } finally {
+      this.batchDepth--;
+      if (this.batchDepth === 0) {
+        const changes = this.pending.splice(0);
+        this.applyChanges(changes);
+      }
+    }
+  }
+
+  /**
+  Refreshes a note and the sources whose resolution the operation can change.
+  */
+  public update(change: LinkChange): void {
+    this.updateMany([change]);
+  }
+
+  /**
+  Applies a settled metadata cycle as one comparison.
+  */
+  public updateMany(changes: readonly LinkChange[]): void {
+    if (!this.initialized) {
+      return;
+    }
+    if (this.batchDepth > 0) {
+      this.pending.push(...changes);
+      return;
+    }
+    this.applyChanges(changes);
+  }
+
+  private addIndexes(sourcePath: string): void {
+    for (const row of this.getRows(sourcePath)) {
+      if (row.targetPath) {
+        addIndex(this.targets, row.targetPath, sourcePath);
+      }
+      addIndex(this.names, nameKey(parseLinktext(decodeLink(row.link)).path), sourcePath);
+    }
+  }
+
+  private applyChanges(changes: readonly LinkChange[]): void {
+    if (changes.length === 0) {
+      return;
+    }
+    const affected = new Set<string>();
+    for (const change of changes) {
+      for (const path of [change.path, change.oldPath]) {
+        if (path === undefined) {
+          continue;
+        }
+        affected.add(path);
+        for (const source of this.targets.get(path) ?? []) {
+          affected.add(source);
+        }
+        for (const source of this.names.get(nameKey(path)) ?? []) {
+          affected.add(source);
+        }
+        const file = this.app.vault.getFileByPath(path);
+        if (file) {
+          for (const source of this.app.metadataCache.getBacklinksForFile(file).keys()) {
+            affected.add(source);
+          }
+        }
+      }
+      if (change.oldPath === undefined) {
+        continue;
+      }
+      // Carry identities across a source rename, so its existing damage does not become new damage.
+      const oldRows = this.getRows(change.oldPath);
+      const oldProblems = this.getProblems(change.oldPath);
+      this.removeIndexes(change.oldPath);
+      this.rows.delete(change.oldPath);
+      this.problems.delete(change.oldPath);
+      this.rows.set(change.path, oldRows);
+      this.problems.set(change.path, oldProblems);
+    }
+    const first = ensureNonNullable(changes[0]);
+    const cause: LinkChange = changes.length === 1 ? first : { changes, kind: 'batch', path: first.path };
+    this.recompute([...affected], cause);
+  }
+
+  private readRows(sourcePath: string, cache: CachedMetadata): LinkRow[] {
+    const rows: LinkRow[] = [];
+    const counts = new Map<string, number>();
+    const add = (reference: LinkReference): void => {
+      const { key, kind, link, position } = reference;
+      // External destinations belong to their protocol handler, not to the vault resolver.
+      if (/^(?:[a-z][a-z\d+.-]*:|\/\/)/iu.test(link)) {
+        return;
+      }
+      const identity = JSON.stringify([kind, link, key]);
+      const occurrence = counts.get(identity) ?? 0;
+      counts.set(identity, occurrence + 1);
+      const { path, subpath } = parseLinktext(decodeLink(link));
+      const file = path ? this.app.metadataCache.getFirstLinkpathDest(path, sourcePath) : this.app.vault.getFileByPath(sourcePath);
+      let target: LinkTarget | null = null;
+      if (file && this.app.vault.getFileByPath(file.path)) {
+        if (subpath) {
+          const targetCache = this.app.metadataCache.getFileCache(file);
+          const resolved = targetCache && resolveSubpath(targetCache, subpath);
+          if (resolved) {
+            target = { kind: resolved.type === 'block' ? 'block' : 'heading', path: file.path, subpath };
+          }
+        } else {
+          target = { kind: 'file', path: file.path, subpath };
+        }
+      }
+      rows.push({ id: `${identity}:${String(occurrence)}`, key, kind, link, position, sourcePath, target, targetPath: file?.path ?? null });
+    };
+    for (const reference of cache.links ?? []) {
+      add({ key: null, kind: 'link', link: reference.link, position: reference.position });
+    }
+    for (const reference of cache.embeds ?? []) {
+      add({ key: null, kind: 'embed', link: reference.link, position: reference.position });
+    }
+    for (const reference of cache.frontmatterLinks ?? []) {
+      add({ key: reference.key, kind: 'frontmatter', link: reference.link, position: null });
+    }
+    // Obsidian calls reference-style link occurrences `referenceLinks` in its public cache.
+    for (const reference of cache.referenceLinks ?? []) {
+      add({ key: reference.id, kind: 'reference', link: reference.link, position: reference.position });
+    }
+    return rows;
+  }
+
+  private recompute(paths: readonly string[], cause: LinkChange | null): void {
+    const newProblems: LinkProblem[] = [];
+    for (const path of paths) {
+      const previousRows = new Map(this.getRows(path).map((row) => [row.id, row]));
+      const previousProblems = new Map(this.getProblems(path).map((problem) => [problem.row.id, problem]));
+      this.removeIndexes(path);
+      const file = this.app.vault.getFileByPath(path);
+      const cache = file ? this.app.metadataCache.getFileCache(file) : null;
+      // A newly created file may not have metadata yet. Preserve its snapshot until its changed event.
+      if (file && !cache) {
+        this.addIndexes(path);
+        continue;
+      }
+      const rows = cache ? this.readRows(path, cache) : [];
+      const currentIds = new Set(rows.map((row) => row.id));
+      const problems: LinkProblem[] = [];
+      for (const row of rows) {
+        if (row.target) {
+          continue;
+        }
+        const previous = previousProblems.get(row.id);
+        // An edited destination retains its source anchor. Avoid claiming an inserted link whose old
+        // neighbor merely moved down: that neighbor's identity still appears in the current rows.
+        const previousRow = previousRows.get(row.id) ?? [...previousRows.values()].find((candidate) =>
+          !currentIds.has(candidate.id)
+          && candidate.kind === row.kind
+          && candidate.key === row.key
+          && candidate.position?.start.offset === row.position?.start.offset
+        );
+        const isNew = Boolean(cause && previousRow?.target);
+        const problem: LinkProblem = {
+          cause: isNew ? cause : previous?.cause ?? null,
+          message: `Cannot resolve ${row.link}`,
+          row,
+          status: isNew ? 'new' : previous?.status ?? 'standing'
+        };
+        problems.push(problem);
+        if (isNew) {
+          newProblems.push(problem);
+        }
+      }
+      if (file) {
+        this.rows.set(path, rows);
+        this.problems.set(path, problems);
+        this.addIndexes(path);
+      } else {
+        this.rows.delete(path);
+        this.problems.delete(path);
+      }
+    }
+    this.trigger('changed', { newProblems, sourcePaths: paths } satisfies LinkEngineChange);
+    if (newProblems.length === 0) {
+      return;
+    }
+    this.notify(newProblems);
+  }
+
+  private removeIndexes(sourcePath: string): void {
+    for (const row of this.getRows(sourcePath)) {
+      if (row.targetPath) {
+        removeIndex(this.targets, row.targetPath, sourcePath);
+      }
+      removeIndex(this.names, nameKey(parseLinktext(decodeLink(row.link)).path), sourcePath);
+    }
+  }
+}
+
+function addIndex(index: Map<string, Set<string>>, key: string, sourcePath: string): void {
+  const sources = index.get(key) ?? new Set<string>();
+  sources.add(sourcePath);
+  index.set(key, sources);
+}
+
+function decodeLink(link: string): string {
+  try {
+    return decodeURI(link);
+  } catch {
+    return link;
+  }
+}
+
+function nameKey(path: string): string {
+  return path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/iu, '').toLowerCase();
+}
+
+function removeIndex(index: Map<string, Set<string>>, key: string, sourcePath: string): void {
+  const sources = index.get(key);
+  if (!sources) {
+    return;
+  }
+  sources.delete(sourcePath);
+  if (sources.size === 0) {
+    index.delete(key);
+  }
+}
