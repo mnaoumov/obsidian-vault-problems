@@ -12,6 +12,8 @@ The `</>` toggle beside a code button reveals its code. Every button also states
 
 Then open [02 Automatic repairs](<./02 Automatic repairs.md>) to edit a heading, move a heading and block between notes, and undo the rewritten links. That walkthrough also demonstrates the **Automatically repair links** setting.
 
+Open [03 Problems](<./03 Problems.md>) for the live list, source navigation, quick fixes, filters and ignored paths.
+
 ## Materials
 
 The [source note](<./Materials/01 Live links/Source.md>) and [target note](<./Materials/01 Live links/Target.md>) supply the walkthrough's linked material.

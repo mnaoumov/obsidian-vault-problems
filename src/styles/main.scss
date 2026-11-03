@@ -8,9 +8,32 @@
   /* Override library styles */
 }
 
-/* The word-count widget the sample editor extension renders. Styled here rather than through
-   `element.style`, so a theme can restyle it. */
-.cm-sample-word-count {
-  font-size: 0.85em;
-  opacity: 0.5;
+.vault-problems-view {
+  padding: var(--size-4-3);
+}
+
+.vault-problems-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-2);
+}
+
+.vault-problems-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--size-4-1);
+  padding: var(--size-4-2) 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.vault-problems-open {
+  white-space: normal;
+  height: auto;
+  text-align: start;
+}
+
+.vault-problems-severity {
+  color: var(--text-error);
+  font-size: var(--font-smallest);
 }

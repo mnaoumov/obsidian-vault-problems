@@ -7,6 +7,7 @@ import type {
 
 import { PluginNoticeComponent } from '@mnaoumov/obsidian-lib/components/plugin-notice-component';
 import { castTo } from '@mnaoumov/typescript-lib/object-utils';
+import { ensureNonNullable } from '@mnaoumov/typescript-lib/type-guards';
 import { Plugin as ObsidianPlugin } from 'obsidian';
 import {
   App,
@@ -19,9 +20,44 @@ import {
   vi
 } from 'vitest';
 
+import type { LinkProblem } from './link-model.ts';
+
 import { Plugin } from './plugin.ts';
 
 describe('VaultProblems', () => {
+  it('loads ignore settings, opens a registered sidebar from command and ribbon, and tolerates no available leaf', async () => {
+    const app = App.createConfigured__().asOriginalType__();
+    const manifest: PluginManifest = { author: 'test', description: 'test', id: 'vault-problems', minAppVersion: '1.14.5', name: 'Vault Problems', version: '0.0.0' };
+    const plugin = new Plugin(app, manifest);
+    expect(plugin.getProblems()).toEqual([]);
+    vi.spyOn(plugin, 'loadData').mockResolvedValue({ ignoredPaths: ['Folder/**', 42] });
+    const ribbon = vi.spyOn(plugin, 'addRibbonIcon');
+    await plugin.onload();
+    expect(plugin.ignoredPaths).toEqual(['Folder/**']);
+    expect(plugin.getProblems()).toEqual([]);
+    const command = ensureNonNullable(PluginHost.fromOriginalType2__(plugin).commands__.get('open-problems'));
+    command.callback?.();
+    await new Promise<void>((resolve) => {
+      window.setTimeout(resolve, 0);
+    });
+    expect(app.workspace.getLeavesOfType('vault-problems')).toHaveLength(1);
+    ensureNonNullable(ribbon.mock.calls[0])[2](new MouseEvent('click'));
+    await new Promise<void>((resolve) => {
+      window.setTimeout(resolve, 0);
+    });
+    expect(app.workspace.getLeavesOfType('vault-problems')).toHaveLength(1);
+    vi.spyOn(app.workspace, 'getLeavesOfType').mockReturnValue([]);
+    vi.spyOn(app.workspace, 'getRightLeaf').mockReturnValue(null);
+    command.callback?.();
+    await new Promise<void>((resolve) => {
+      window.setTimeout(resolve, 0);
+    });
+    await app.vault.create('New.md', '');
+    const problem: LinkProblem = { cause: { kind: 'rename', oldPath: 'Old.md', path: 'New.md' }, message: 'Missing', row: { id: 'old', key: null, kind: 'link', link: 'Old', position: null, sourcePath: 'Source.md', target: null, targetPath: null }, status: 'new' };
+    const fixes = await plugin.problemFixes?.getFixes(problem);
+    expect(fixes?.some((fix) => fix.label.startsWith('Use New.md'))).toBe(true);
+    plugin.unload();
+  });
   it('extends the Obsidian Plugin class', () => {
     expect(Plugin.prototype).toBeInstanceOf(ObsidianPlugin);
   });

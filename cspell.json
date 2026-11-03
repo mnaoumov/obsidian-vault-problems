@@ -51,6 +51,7 @@
     "postcss",
     "preact",
     "rescanning",
+    "retarget",
     "rumdl",
     "setext",
     "smol",
@@ -69,6 +70,7 @@
     "wabt",
     "wasm",
     "wdio",
+    "wikilink",
     "wikilinks"
   ],
   "ignoreRegExpList": [
