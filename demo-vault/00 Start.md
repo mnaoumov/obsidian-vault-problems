@@ -10,6 +10,8 @@ Open [01 Live links](<./01 Live links.md>) and press **Change the linked heading
 
 The `</>` toggle beside a code button reveals its code. Every button also states its manual equivalent, so you can reproduce the edit yourself.
 
+Then open [02 Automatic repairs](<./02 Automatic repairs.md>) to edit a heading, move a heading and block between notes, and undo the rewritten links. That walkthrough also demonstrates the **Automatically repair links** setting.
+
 ## Materials
 
 The [source note](<./Materials/01 Live links/Source.md>) and [target note](<./Materials/01 Live links/Target.md>) supply the walkthrough's linked material.

@@ -71,6 +71,13 @@ export class LinkEngine extends AsyncEventsBase<LinkEngineEventMap> {
   }
 
   /**
+  Sources retained for a target, including links whose subpath just disappeared.
+  */
+  public getSourcesForTarget(targetPath: string): readonly string[] {
+    return [...this.targets.get(targetPath) ?? []];
+  }
+
+  /**
   Takes the only vault-wide snapshot; repeated layout callbacks are harmless.
   */
   public initialize(): void {

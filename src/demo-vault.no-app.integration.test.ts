@@ -3,5 +3,5 @@ import { getRootFolder } from '@mnaoumov/typescript-dev-toolkit/root';
 import process from 'node:process';
 
 // Validates note structure, Markdown links and reachability without launching Obsidian.
-// The plugin currently has no settings to reflect into the documentation.
+// The automatic-repair preference is demonstrated by the manual editor walkthrough.
 registerDemoVaultCoverageSuite({ rootFolder: getRootFolder() ?? process.cwd() });
