@@ -1,10 +1,22 @@
+import type { StateField } from '@codemirror/state';
+import type { EditorView } from '@codemirror/view';
+import type { MarkdownFileInfo } from 'obsidian';
+
 import { OpenBugReportCommandHandler } from '@mnaoumov/obsidian-lib/command-handlers/open-bug-report-command-handler';
 import { OpenDemoVaultCommandHandler } from '@mnaoumov/obsidian-lib/command-handlers/open-demo-vault-command-handler';
 import { PluginBase } from '@mnaoumov/obsidian-lib/plugin/plugin';
 import { invokeAsyncSafely } from '@mnaoumov/typescript-lib/async';
 import { castTo } from '@mnaoumov/typescript-lib/object-utils';
+import {
+  editorInfoField,
+  Menu
+} from 'obsidian';
+
+import type { RangedLinkProblem } from './editor-problems.ts';
+import type { LinkProblem } from './link-model.ts';
 
 import { AutoRepairComponent } from './auto-repair-component.ts';
+import { EditorProblems } from './editor-problems.ts';
 import { LinkEngineComponent } from './link-engine-component.ts';
 import { LinkEngine } from './link-engine.ts';
 import { ProblemFixes } from './problem-fixes.ts';
@@ -79,6 +91,39 @@ export class Plugin extends PluginBase {
     // Obsidian's CJS declarations and CodeMirror's ESM declarations have distinct private type identities.
     this.registerEditorExtension(castTo(repairs.extension));
     this.problemFixes = new ProblemFixes({ app: this.app, getProblems: (): readonly import('./link-model.ts').LinkProblem[] => this.getProblems(), notify: showRepairNotice.bind(undefined, this.pluginNoticeComponent), repairs });
+    const engine = this.linkEngine;
+    const diagnostics = new EditorProblems({
+      getPath: (state): string | undefined => state.field(castTo<StateField<MarkdownFileInfo>>(editorInfoField), false)?.file?.path,
+      getProblems: (path): readonly LinkProblem[] => engine.getProblems(path),
+      showFixes: (problem, view): void => {
+        this.showEditorFixes(problem, view);
+      },
+      subscribe: (refresh): () => void => {
+        const ref = engine.onChanged((change) => {
+          for (const path of change.sourcePaths) {
+            refresh(path);
+          }
+        });
+        return (): void => {
+          engine.offref(ref);
+        };
+      }
+    });
+    this.registerEditorExtension(castTo(diagnostics.extension));
+    this.addCommand({
+      editorCheckCallback: (checking, editor) => {
+        const problem = diagnostics.getProblemAtCursor(editor.cm);
+        if (!problem) {
+          return false;
+        }
+        if (!checking) {
+          this.showEditorFixes(problem, editor.cm);
+        }
+        return true;
+      },
+      id: 'quick-fixes-at-cursor',
+      name: 'Quick fixes at cursor'
+    });
     this.registerView(PROBLEMS_VIEW_TYPE, (leaf) => new ProblemsView(leaf, this));
     this.addCommand({
       callback: () => {
@@ -121,5 +166,46 @@ export class Plugin extends PluginBase {
 
     await leaf.setViewState({ active: true, type: PROBLEMS_VIEW_TYPE });
     await this.app.workspace.revealLeaf(leaf);
+  }
+
+  private showEditorFixes(problem: RangedLinkProblem, view: EditorView): void {
+    const snapshot = view.state.doc;
+    const path = getPath();
+    function getPath(): string | undefined {
+      return view.state.field(castTo<StateField<MarkdownFileInfo>>(editorInfoField), false)?.file?.path;
+    }
+    invokeAsyncSafely(async () => {
+      try {
+        const fixes = await this.problemFixes?.getFixes(problem) ?? [];
+        const position = problem.row.position;
+        if (!view.dom.isConnected || view.state.doc !== snapshot || getPath() !== path) {
+          return;
+        }
+        const coords = view.coordsAtPos(Math.min(position.start.offset, view.state.doc.length));
+        if (!coords) {
+          return;
+        }
+        const menu = new Menu();
+        for (const action of fixes) {
+          menu.addItem((item) =>
+            item.setTitle(action.label).onClick(() => {
+              invokeAsyncSafely(async () => {
+                try {
+                  if (view.state.doc !== snapshot || getPath() !== path) {
+                    return;
+                  }
+                  await action.run();
+                } catch (error) {
+                  this.showProblemError(error);
+                }
+              });
+            })
+          );
+        }
+        menu.showAtPosition({ x: coords.left, y: coords.bottom });
+      } catch (error) {
+        this.showProblemError(error);
+      }
+    });
   }
 }

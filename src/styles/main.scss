@@ -37,3 +37,16 @@
   color: var(--text-error);
   font-size: var(--font-smallest);
 }
+
+.vault-problems-underline {
+  text-decoration: underline wavy var(--text-error);
+  text-underline-offset: 3px;
+}
+
+.vault-problems-tooltip {
+  padding: var(--size-4-2);
+
+  button {
+    margin-top: var(--size-4-2);
+  }
+}
