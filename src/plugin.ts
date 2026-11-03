@@ -1,24 +1,36 @@
 import { OpenBugReportCommandHandler } from '@mnaoumov/obsidian-lib/command-handlers/open-bug-report-command-handler';
 import { OpenDemoVaultCommandHandler } from '@mnaoumov/obsidian-lib/command-handlers/open-demo-vault-command-handler';
 import { PluginBase } from '@mnaoumov/obsidian-lib/plugin/plugin';
+import { invokeAsyncSafely } from '@mnaoumov/typescript-lib/async';
 import { castTo } from '@mnaoumov/typescript-lib/object-utils';
 
 import { AutoRepairComponent } from './auto-repair-component.ts';
 import { LinkEngineComponent } from './link-engine-component.ts';
 import { LinkEngine } from './link-engine.ts';
+import { ProblemFixes } from './problem-fixes.ts';
+import {
+  PROBLEMS_VIEW_TYPE,
+  ProblemsView
+} from './problems-view.ts';
 import { showRepairNotice } from './repair-notice.ts';
 import { RepairSettingTab } from './repair-setting-tab.ts';
 
 export class Plugin extends PluginBase {
+  public ignoredPaths: string[] = [];
   /**
   Whether editor operations may repair links automatically.
   */
   public isAutoRepairEnabled = true;
-
   /**
   The shared diagnostics source used by views and editor extensions.
   */
   public linkEngine: LinkEngine | null = null;
+
+  public problemFixes: null | ProblemFixes = null;
+
+  public getProblems(): readonly import('./link-model.ts').LinkProblem[] {
+    return this.linkEngine?.getAllProblems() ?? [];
+  }
 
   /**
   Saves the repair preference without discarding other plugin data.
@@ -29,9 +41,25 @@ export class Plugin extends PluginBase {
     await this.saveData({ ...(typeof data === 'object' && data !== null && data), isAutoRepairEnabled: isEnabled });
   }
 
+  public async setIgnoredPaths(value: string): Promise<void> {
+    this.ignoredPaths = value.split('\n').map((path) => path.trim()).filter(Boolean);
+    const data: unknown = await this.loadData();
+    await this.saveData({ ...(typeof data === 'object' && data !== null && data), ignoredPaths: this.ignoredPaths });
+    for (const leaf of this.app.workspace.getLeavesOfType(PROBLEMS_VIEW_TYPE)) {
+      if (leaf.view instanceof ProblemsView) {
+        leaf.view.render();
+      }
+    }
+  }
+
+  public showProblemError(error: unknown): void {
+    this.pluginNoticeComponent.showNotice(String(error));
+  }
+
   protected override async onloadImpl(): Promise<void> {
     const data: unknown = await this.loadData();
     this.isAutoRepairEnabled = !(typeof data === 'object' && data !== null && 'isAutoRepairEnabled' in data && data.isAutoRepairEnabled === false);
+    this.ignoredPaths = typeof data === 'object' && data !== null && 'ignoredPaths' in data && Array.isArray(data.ignoredPaths) ? data.ignoredPaths.filter((path): path is string => typeof path === 'string') : [];
     this.linkEngine = new LinkEngine({
       app: this.app,
       notify: (problems): void => {
@@ -50,6 +78,18 @@ export class Plugin extends PluginBase {
     );
     // Obsidian's CJS declarations and CodeMirror's ESM declarations have distinct private type identities.
     this.registerEditorExtension(castTo(repairs.extension));
+    this.problemFixes = new ProblemFixes({ app: this.app, getProblems: (): readonly import('./link-model.ts').LinkProblem[] => this.getProblems(), notify: showRepairNotice.bind(undefined, this.pluginNoticeComponent), repairs });
+    this.registerView(PROBLEMS_VIEW_TYPE, (leaf) => new ProblemsView(leaf, this));
+    this.addCommand({
+      callback: () => {
+        invokeAsyncSafely(() => this.openProblems());
+      },
+      id: 'open-problems',
+      name: 'Open problems'
+    });
+    this.addRibbonIcon('list-checks', 'Open problems', () => {
+      invokeAsyncSafely(() => this.openProblems());
+    });
     this.addSettingTab(new RepairSettingTab(this.app, this));
 
     // `OpenDemoVaultCommandHandler` is what makes the README's first demo-vault route real: it downloads
@@ -71,5 +111,15 @@ export class Plugin extends PluginBase {
         pluginVersion: this.manifest.version
       })
     ]);
+  }
+
+  private async openProblems(): Promise<void> {
+    const leaf = this.app.workspace.getLeavesOfType(PROBLEMS_VIEW_TYPE)[0] ?? this.app.workspace.getRightLeaf(false);
+    if (!leaf) {
+      return;
+    }
+
+    await leaf.setViewState({ active: true, type: PROBLEMS_VIEW_TYPE });
+    await this.app.workspace.revealLeaf(leaf);
   }
 }

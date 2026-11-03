@@ -57,6 +57,13 @@ export class LinkEngine extends AsyncEventsBase<LinkEngineEventMap> {
   }
 
   /**
+  All current problems, without another vault scan.
+  */
+  public getAllProblems(): readonly LinkProblem[] {
+    return [...this.problems.values()].flat();
+  }
+
+  /**
   Current problems for a note, in metadata order.
   */
   public getProblems(sourcePath: string): readonly LinkProblem[] {

@@ -105,6 +105,20 @@ export class AutoRepairComponent extends Component {
     this.params = params;
   }
 
+  public async applyEdits(edits: readonly RepairFileEdit[], pathsToLock: readonly string[] = []): Promise<void> {
+    const locks: Disposable[] = [];
+    try {
+      for (const path of new Set([...edits.map((edit) => edit.path), ...pathsToLock])) {
+        locks.push(this.params.resourceLockComponent.lockForPath({ operationName: 'Repair links', pathOrFile: path }));
+      }
+      await this.writeEdits(edits);
+    } finally {
+      for (const lock of locks.reverse()) {
+        lock[Symbol.dispose]();
+      }
+    }
+  }
+
   /**
   Captures evidence before the asynchronous metadata cycle loses the old target.
   */
@@ -192,20 +206,6 @@ export class AutoRepairComponent extends Component {
   */
   public async undo(edits: readonly RepairFileEdit[]): Promise<void> {
     await this.applyEdits(edits.map((edit) => ({ after: edit.before, before: edit.after, path: edit.path })));
-  }
-
-  private async applyEdits(edits: readonly RepairFileEdit[], pathsToLock: readonly string[] = []): Promise<void> {
-    const locks: Disposable[] = [];
-    try {
-      for (const path of new Set([...edits.map((edit) => edit.path), ...pathsToLock])) {
-        locks.push(this.params.resourceLockComponent.lockForPath({ operationName: 'Repair links', pathOrFile: path }));
-      }
-      await this.writeEdits(edits);
-    } finally {
-      for (const lock of locks.reverse()) {
-        lock[Symbol.dispose]();
-      }
-    }
   }
 
   private checkCanApply(): boolean {

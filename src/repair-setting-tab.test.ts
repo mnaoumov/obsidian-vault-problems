@@ -23,10 +23,14 @@ describe('Repair preference', () => {
     app.metadataCache.trigger('resolved');
     const tab = new RepairSettingTab(app, plugin);
     expect(tab.getControlValue()).toBe(false);
-    expect(tab.getSettingDefinitions()).toMatchObject([{ control: { defaultValue: true, key: 'isAutoRepairEnabled', type: 'toggle' }, name: 'Automatically repair links' }]);
+    expect(tab.getSettingDefinitions()).toMatchObject([{ control: { defaultValue: true, key: 'isAutoRepairEnabled', type: 'toggle' }, name: 'Automatically repair links' }, { control: { defaultValue: '', key: 'ignoredPaths', type: 'textarea' } }]);
     await tab.setControlValue('isAutoRepairEnabled', true);
     expect(tab.getControlValue()).toBe(true);
     expect(save).toHaveBeenCalledWith({ isAutoRepairEnabled: true, other: 'kept' });
+    await tab.setControlValue('ignoredPaths', 'Folder/**\nArchive');
+    expect(tab.getControlValue('ignoredPaths')).toBe('Folder/**\nArchive');
+    expect(save).toHaveBeenCalledWith({ ignoredPaths: ['Folder/**', 'Archive'], isAutoRepairEnabled: false, other: 'kept' });
+    await expect(tab.setControlValue('ignoredPaths', 42)).rejects.toThrow('must be a boolean');
     await expect(tab.setControlValue('isAutoRepairEnabled', 'invalid')).rejects.toThrow('must be a boolean');
     plugin.unload();
   });
