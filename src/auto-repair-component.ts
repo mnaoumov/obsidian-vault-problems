@@ -3,6 +3,7 @@ import type {
   Transaction
 } from '@codemirror/state';
 import type { ResourceLockComponent } from '@mnaoumov/obsidian-lib/resource-lock';
+import type { DisposableEx } from '@mnaoumov/typescript-lib/disposable';
 import type {
   App,
   CachedMetadata,
@@ -20,6 +21,7 @@ import { parseMetadata } from '@mnaoumov/obsidian-lib/metadata-cache';
 import { parseLink } from '@mnaoumov/obsidian-lib/parse-link';
 import { readSafe } from '@mnaoumov/obsidian-lib/vault';
 import { invokeAsyncSafely } from '@mnaoumov/typescript-lib/async';
+import { toDisposableEx } from '@mnaoumov/typescript-lib/disposable';
 import { castTo } from '@mnaoumov/typescript-lib/object-utils';
 import { ensureNonNullable } from '@mnaoumov/typescript-lib/type-guards';
 import { encodeUrl } from '@mnaoumov/typescript-lib/url';
@@ -106,15 +108,15 @@ export class AutoRepairComponent extends Component {
   }
 
   public async applyEdits(edits: readonly RepairFileEdit[], pathsToLock: readonly string[] = []): Promise<void> {
-    const locks: Disposable[] = [];
+    const locks: DisposableEx[] = [];
     try {
       for (const path of new Set([...edits.map((edit) => edit.path), ...pathsToLock])) {
-        locks.push(this.params.resourceLockComponent.lockForPath({ operationName: 'Repair links', pathOrFile: path }));
+        locks.push(toDisposableEx(this.params.resourceLockComponent.lockForPath({ operationName: 'Repair links', pathOrFile: path })));
       }
       await this.writeEdits(edits);
     } finally {
       for (const lock of locks.reverse()) {
-        lock[Symbol.dispose]();
+        lock.dispose();
       }
     }
   }
