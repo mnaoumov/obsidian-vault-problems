@@ -13,7 +13,10 @@ describe('Automatic link repair', () => {
       async callback({ app, lib: { pressKey, waitUntil } }) {
         const plugin = app.plugins.getPlugin('vault-problems') as Plugin;
         const root = 'automatic-link-repair';
-        const timeoutInMilliseconds = 8000;
+        const timeoutInMilliseconds = 6000;
+        // A loaded single-core Android emulator needs about 7 s to repair even one backlink note.
+        // The three waits stay under the 30 s cap of one evalInObsidian call.
+        const repairTimeoutInMilliseconds = 16_000;
         await app.vault.createFolder(root);
         const leaf = app.workspace.getLeaf(true);
         try {
@@ -43,7 +46,7 @@ describe('Automatic link repair', () => {
                 const second = await app.vault.read(other);
                 return first.includes('#R') && second.includes('#R') && !/#original/iu.test(first);
               },
-              timeoutInMilliseconds
+              timeoutInMilliseconds: repairTimeoutInMilliseconds
             });
           } catch (error) {
             throw new Error(`${String(error)}: ${JSON.stringify({ headings: app.metadataCache.getFileCache(target)?.headings, notices: [...document.querySelectorAll('.notice')].map((notice) => notice.textContent), other: await app.vault.read(other), problems: plugin.linkEngine?.getProblems(source.path), source: await app.vault.read(source), target: await app.vault.read(target) })}`, { cause: error });
