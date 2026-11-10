@@ -26,4 +26,4 @@ The problem disappears when metadata updates. Manual equivalent: change the targ
 
 ## Current surface
 
-Analysis starts automatically when the vault is ready. Open [03 Problems](<./03 Problems.md>) to inspect the live list and try quick fixes. [02 Automatic repairs](<./02 Automatic repairs.md>) demonstrates editor repairs and their setting. Editor underlines and syntax checks are still being built.
+Analysis starts automatically when the vault is ready. Open [03 Problems](<./03 Problems.md>) to inspect the live list and try quick fixes. [02 Automatic repairs](<./02 Automatic repairs.md>) demonstrates editor repairs and their setting. [04 Syntax checks](<./04 Syntax checks.md>) demonstrates problems in the note text itself.

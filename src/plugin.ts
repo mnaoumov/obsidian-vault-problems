@@ -26,6 +26,7 @@ import {
 } from './problems-view.ts';
 import { showRepairNotice } from './repair-notice.ts';
 import { RepairSettingTab } from './repair-setting-tab.ts';
+import { SyntaxCheckComponent } from './syntax-check-component.ts';
 
 export class Plugin extends PluginBase {
   public ignoredPaths: string[] = [];
@@ -79,6 +80,7 @@ export class Plugin extends PluginBase {
       }
     });
     this.addChild(new LinkEngineComponent({ app: this.app, engine: this.linkEngine }));
+    this.addChild(new SyntaxCheckComponent({ app: this.app, engine: this.linkEngine }));
     const repairs = this.addChild(
       new AutoRepairComponent({
         app: this.app,
