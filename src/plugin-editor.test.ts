@@ -14,7 +14,10 @@ import type { MockInstance } from 'vitest';
 
 import { EditorState } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
-import { noopAsync } from '@mnaoumov/typescript-lib/function';
+import {
+  noop,
+  noopAsync
+} from '@mnaoumov/typescript-lib/function';
 import { castTo } from '@mnaoumov/typescript-lib/object-utils';
 import { ensureNonNullable } from '@mnaoumov/typescript-lib/type-guards';
 import { editorInfoField } from 'obsidian';
@@ -38,6 +41,17 @@ import { Plugin } from './plugin.ts';
 
 interface HoverCapture {
   readonly hover: ((view: EditorView, pos: number) => null | Tooltip)[];
+}
+
+/**
+ The plugin's protected notice component, as the plugin itself reaches it.
+ */
+interface NoticeOwner {
+  readonly pluginNoticeComponent: NoticeShower;
+}
+
+interface NoticeShower {
+  readonly showNotice: (message: string) => void;
 }
 
 const captured = vi.hoisted((): HoverCapture => ({ hover: [] }));
@@ -143,7 +157,7 @@ describe('Editor fix command', () => {
     await settle();
     expect(menus).toHaveLength(0);
     view.setState(originalState);
-    fixes.mockResolvedValue([]);
+    fixes.mockResolvedValue([{ label: 'Unused fix', run: vi.fn<() => Promise<void>>() }]);
     vi.spyOn(view, 'coordsAtPos').mockReturnValue(null);
     command(false, editor, castTo({}));
     await settle();
@@ -159,11 +173,15 @@ describe('Editor fix command', () => {
   it('opens fixes from hover, tolerates no provider and skips editors without a file', async () => {
     const { command, editor, extension, menus, plugin, view } = await fixture();
     plugin.problemFixes = null;
+    // The notice component is protected on the plugin, so the test reaches it the way the plugin does.
+    const notices = castTo<NoticeOwner>(plugin).pluginNoticeComponent;
+    const showNotice = vi.spyOn(notices, 'showNotice').mockImplementation(noop);
     const tooltip = ensureNonNullable(ensureNonNullable(captured.hover.at(-1))(view, 1));
     ensureNonNullable(tooltip.create(view).dom.querySelector('button')).click();
     await settle();
-    expect(menus).toHaveLength(1);
-    expect(menus[0]?.menuItems__).toHaveLength(0);
+    // With nothing to offer, an empty menu would look broken; a notice says so instead.
+    expect(menus).toHaveLength(0);
+    expect(showNotice).toHaveBeenCalledWith('No quick fix for this problem: review it by hand.');
     expect(command(true, editor, castTo({}))).toBe(true);
     for (const fields of [[], [castTo<StateField<MarkdownFileInfo>>(editorInfoField).init(() => castTo({}))]]) {
       const bare = new EditorView({ parent: document.body, state: EditorState.create({ extensions: [extension, fields] }) });

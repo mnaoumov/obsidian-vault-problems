@@ -36,11 +36,24 @@
 .vault-problems-severity {
   color: var(--text-error);
   font-size: var(--font-smallest);
+
+  &.is-warning {
+    color: var(--text-warning);
+  }
+}
+
+.vault-problems-status {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
 }
 
 .vault-problems-underline {
   text-decoration: underline wavy var(--text-error);
   text-underline-offset: 3px;
+
+  &.is-warning {
+    text-decoration-color: var(--text-warning);
+  }
 }
 
 .vault-problems-tooltip {

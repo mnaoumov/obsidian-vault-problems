@@ -12,6 +12,7 @@ import {
   resolveSubpath
 } from 'obsidian';
 
+import type { HtmlDiagnostic } from './advanced-metadata-cache.ts';
 import type {
   LinkChange,
   LinkEngineChange,
@@ -21,6 +22,11 @@ import type {
   LinkTarget
 } from './link-model.ts';
 import type { SyntaxIssue } from './syntax-checks.ts';
+
+/**
+Longest tag source quoted in a problem message; a long tag is cut, never rewritten.
+*/
+const MAX_HTML_MESSAGE_LENGTH = 80;
 
 /**
 Collaborators for a metadata-backed link engine.
@@ -43,6 +49,7 @@ A live snapshot shared by the problems view, repairs and editor diagnostics.
 export class LinkEngine extends AsyncEventsBase<LinkEngineEventMap> {
   private readonly app: App;
   private batchDepth = 0;
+  private readonly htmlProblems = new Map<string, readonly LinkProblem[]>();
   private initialized = false;
   private readonly names = new Map<string, Set<string>>();
   private readonly notify: (problems: readonly LinkProblem[]) => void;
@@ -79,17 +86,29 @@ export class LinkEngine extends AsyncEventsBase<LinkEngineEventMap> {
   }
 
   /**
-  All current problems, without another vault scan.
+  Drops every HTML problem, when their provider goes away; a later scan publishes them again.
   */
-  public getAllProblems(): readonly LinkProblem[] {
-    return [...this.problems.values(), ...this.syntaxProblems.values()].flat();
+  public clearHtmlDiagnostics(): void {
+    const sourcePaths = [...this.htmlProblems.keys()];
+    if (sourcePaths.length === 0) {
+      return;
+    }
+    this.htmlProblems.clear();
+    this.trigger('changed', { newProblems: [], sourcePaths } satisfies LinkEngineChange);
   }
 
   /**
-  Current problems for a note: link problems in metadata order, then syntax problems in source order.
+  All current problems, without another vault scan.
+  */
+  public getAllProblems(): readonly LinkProblem[] {
+    return [...this.problems.values(), ...this.syntaxProblems.values(), ...this.htmlProblems.values()].flat();
+  }
+
+  /**
+  Current problems for a note: link problems in metadata order, then syntax and HTML problems in source order.
   */
   public getProblems(sourcePath: string): readonly LinkProblem[] {
-    return [...this.getLinkProblems(sourcePath), ...this.syntaxProblems.get(sourcePath) ?? []];
+    return [...this.getLinkProblems(sourcePath), ...this.syntaxProblems.get(sourcePath) ?? [], ...this.htmlProblems.get(sourcePath) ?? []];
   }
 
   /**
@@ -138,12 +157,34 @@ export class LinkEngine extends AsyncEventsBase<LinkEngineEventMap> {
   }
 
   /**
+  Replaces a note's HTML problems, as the shared HTML index reported them, and publishes the change when it differs.
+  */
+  public setHtmlDiagnostics(sourcePath: string, diagnostics: readonly HtmlDiagnostic[]): void {
+    const problems = [...diagnostics]
+      .sort((left, right) => left.range.position.start.offset - right.range.position.start.offset || left.kind.localeCompare(right.kind))
+      .map((diagnostic): LinkProblem => ({
+        cause: null,
+        html: diagnostic,
+        message: describeHtmlDiagnostic(diagnostic),
+        row: {
+          id: `html:${diagnostic.kind}:${String(diagnostic.range.position.start.offset)}`,
+          key: null,
+          kind: 'html',
+          link: diagnostic.range.html,
+          position: diagnostic.range.position,
+          sourcePath,
+          target: null,
+          targetPath: null
+        },
+        status: 'standing'
+      }));
+    this.replaceNoteProblems(this.htmlProblems, sourcePath, problems, (problem) => problem.html);
+  }
+
+  /**
   Replaces a note's syntax problems, computed from its text, and publishes the change when it differs.
   */
   public setSyntaxIssues(sourcePath: string, issues: readonly SyntaxIssue[]): void {
-    if (!this.app.vault.getFileByPath(sourcePath)) {
-      return;
-    }
     const problems = issues.map((issue): LinkProblem => ({
       cause: null,
       message: issue.message,
@@ -160,16 +201,7 @@ export class LinkEngine extends AsyncEventsBase<LinkEngineEventMap> {
       status: 'standing',
       syntax: issue
     }));
-    const previous = this.syntaxProblems.get(sourcePath) ?? [];
-    if (JSON.stringify(previous.map((problem) => problem.syntax)) === JSON.stringify(issues)) {
-      return;
-    }
-    if (problems.length === 0) {
-      this.syntaxProblems.delete(sourcePath);
-    } else {
-      this.syntaxProblems.set(sourcePath, problems);
-    }
-    this.trigger('changed', { newProblems: [], sourcePaths: [sourcePath] } satisfies LinkEngineChange);
+    this.replaceNoteProblems(this.syntaxProblems, sourcePath, problems, (problem) => problem.syntax);
   }
 
   /**
@@ -232,15 +264,17 @@ export class LinkEngine extends AsyncEventsBase<LinkEngineEventMap> {
       // Carry identities across a source rename, so its existing damage does not become new damage.
       const oldRows = this.getRows(change.oldPath);
       const oldProblems = this.getLinkProblems(change.oldPath);
-      const oldSyntaxProblems = this.syntaxProblems.get(change.oldPath);
       this.removeIndexes(change.oldPath);
       this.rows.delete(change.oldPath);
       this.problems.delete(change.oldPath);
-      this.syntaxProblems.delete(change.oldPath);
       this.rows.set(change.path, oldRows);
       this.problems.set(change.path, oldProblems);
-      if (oldSyntaxProblems) {
-        this.syntaxProblems.set(change.path, oldSyntaxProblems.map((problem) => ({ ...problem, row: { ...problem.row, sourcePath: change.path } })));
+      for (const store of [this.syntaxProblems, this.htmlProblems]) {
+        const oldNoteProblems = store.get(change.oldPath);
+        store.delete(change.oldPath);
+        if (oldNoteProblems) {
+          store.set(change.path, oldNoteProblems.map((problem) => ({ ...problem, row: { ...problem.row, sourcePath: change.path } })));
+        }
       }
     }
     const first = ensureNonNullable(changes[0]);
@@ -345,6 +379,7 @@ export class LinkEngine extends AsyncEventsBase<LinkEngineEventMap> {
         this.rows.delete(path);
         this.problems.delete(path);
         this.syntaxProblems.delete(path);
+        this.htmlProblems.delete(path);
       }
     }
     this.trigger('changed', { newProblems, sourcePaths: paths } satisfies LinkEngineChange);
@@ -362,6 +397,30 @@ export class LinkEngine extends AsyncEventsBase<LinkEngineEventMap> {
       removeIndex(this.names, nameKey(parseLinktext(decodeLink(row.link)).path), sourcePath);
     }
   }
+
+  /**
+  Replaces one note's problems in a text-derived store, publishing only a real difference.
+  */
+  private replaceNoteProblems(
+    store: Map<string, readonly LinkProblem[]>,
+    sourcePath: string,
+    problems: readonly LinkProblem[],
+    getDetail: (problem: LinkProblem) => unknown
+  ): void {
+    if (!this.app.vault.getFileByPath(sourcePath)) {
+      return;
+    }
+    const previous = store.get(sourcePath) ?? [];
+    if (JSON.stringify(previous.map((problem) => getDetail(problem))) === JSON.stringify(problems.map((problem) => getDetail(problem)))) {
+      return;
+    }
+    if (problems.length === 0) {
+      store.delete(sourcePath);
+    } else {
+      store.set(sourcePath, problems);
+    }
+    this.trigger('changed', { newProblems: [], sourcePaths: [sourcePath] } satisfies LinkEngineChange);
+  }
 }
 
 function addIndex(index: Map<string, Set<string>>, key: string, sourcePath: string): void {
@@ -376,6 +435,18 @@ function decodeLink(link: string): string {
   } catch {
     return link;
   }
+}
+
+/**
+Names what Obsidian does to the tag when it renders the note; the source is never changed.
+*/
+function describeHtmlDiagnostic(diagnostic: HtmlDiagnostic): string {
+  const html = diagnostic.range.html.length > MAX_HTML_MESSAGE_LENGTH
+    ? `${diagnostic.range.html.slice(0, MAX_HTML_MESSAGE_LENGTH)}…`
+    : diagnostic.range.html;
+  return diagnostic.kind === 'unknown'
+    ? `Unknown HTML tag ${html}: Obsidian renders it as an element no browser knows`
+    : `Obsidian's sanitizer changes or removes ${html} when it renders this note`;
 }
 
 function nameKey(path: string): string {

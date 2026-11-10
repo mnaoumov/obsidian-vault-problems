@@ -1,5 +1,6 @@
 import type { Pos } from 'obsidian';
 
+import type { HtmlDiagnostic } from './advanced-metadata-cache.ts';
 import type { SyntaxIssue } from './syntax-checks.ts';
 
 /**
@@ -35,6 +36,10 @@ An unresolved row; a new break keeps its cause until it is repaired.
 */
 export interface LinkProblem {
   readonly cause: LinkChange | null;
+  /**
+  Present only on an HTML problem, whose row has the html kind and no target.
+  */
+  readonly html?: HtmlDiagnostic;
   readonly message: string;
   readonly row: LinkRow;
   readonly status: 'new' | 'standing';
@@ -50,7 +55,7 @@ One metadata reference and its current resolution.
 export interface LinkRow {
   readonly id: string;
   readonly key: null | string;
-  readonly kind: 'embed' | 'frontmatter' | 'link' | 'reference' | 'syntax';
+  readonly kind: 'embed' | 'frontmatter' | 'html' | 'link' | 'reference' | 'syntax';
   readonly link: string;
   /**
   Frontmatter metadata supplies a key rather than an exact text range.

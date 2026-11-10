@@ -89,6 +89,30 @@ describe('Problems panel', () => {
     plugin.unload();
   });
 
+  it('shows an HTML problem as a warning without fixes, and says when HTML is not checked', async () => {
+    const { plugin, problem, problems, view } = await fixture();
+    const html: LinkProblem['html'] = { kind: 'sanitized', range: { html: '<script>', isClosing: false, kind: 'tag', namespace: 'html', position: { end: { col: 8, line: 0, offset: 8 }, start: { col: 0, line: 0, offset: 0 } }, tagName: 'script' } };
+    problems.splice(0, problems.length, { ...problem, html, message: 'Sanitized <script>', row: { ...problem.row, kind: 'html', link: '<script>' } });
+    view.render();
+    expect(view.contentEl.querySelector('.vault-problems-severity.is-warning')?.textContent).toBe('Warning');
+    expect(view.contentEl.querySelector('[aria-label^="Quick fixes"]')).toBeNull();
+    function status(): null | string {
+      return view.contentEl.querySelector('.vault-problems-status')?.textContent ?? null;
+    }
+    expect(status()).toContain('needs the Advanced Metadata Cache plugin');
+    const kind = ensureNonNullable(view.contentEl.querySelector('select'));
+    for (const [value, isShown] of [['html', true], ['link', false]] as const) {
+      kind.value = value;
+      kind.dispatchEvent(new Event('change'));
+      expect(status() !== null).toBe(isShown);
+    }
+    plugin.htmlCheckComponent = null;
+    kind.value = '';
+    kind.dispatchEvent(new Event('change'));
+    expect(status()).toBeNull();
+    plugin.unload();
+  });
+
   it('navigates to a source range and safely ignores a removed source', async () => {
     const { app, file, plugin, view } = await fixture();
     const leaf = app.workspace.getLeaf(false);

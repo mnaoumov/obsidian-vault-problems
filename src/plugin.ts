@@ -17,6 +17,7 @@ import type { LinkProblem } from './link-model.ts';
 
 import { AutoRepairComponent } from './auto-repair-component.ts';
 import { EditorProblems } from './editor-problems.ts';
+import { HtmlCheckComponent } from './html-check-component.ts';
 import { LinkEngineComponent } from './link-engine-component.ts';
 import { LinkEngine } from './link-engine.ts';
 import { ProblemFixes } from './problem-fixes.ts';
@@ -30,6 +31,10 @@ import { RepairSettingTab } from './repair-setting-tab.ts';
 import { SyntaxCheckComponent } from './syntax-check-component.ts';
 
 export class Plugin extends PluginBase {
+  /**
+  The HTML checks, whose status the Problems view shows while HTML is not fully checked.
+  */
+  public htmlCheckComponent: HtmlCheckComponent | null = null;
   public ignoredPaths: string[] = [];
   /**
   Whether editor operations may repair links automatically.
@@ -59,11 +64,7 @@ export class Plugin extends PluginBase {
     this.ignoredPaths = value.split('\n').map((path) => path.trim()).filter(Boolean);
     const data: unknown = await this.loadData();
     await this.saveData({ ...(typeof data === 'object' && data !== null && data), ignoredPaths: this.ignoredPaths });
-    for (const leaf of this.app.workspace.getLeavesOfType(PROBLEMS_VIEW_TYPE)) {
-      if (leaf.view instanceof ProblemsView) {
-        leaf.view.render();
-      }
-    }
+    this.renderProblemsViews();
   }
 
   public showProblemError(error: unknown): void {
@@ -83,6 +84,15 @@ export class Plugin extends PluginBase {
     this.addChild(new LinkEngineComponent({ app: this.app, engine: this.linkEngine }));
     this.addChild(new RenameHandlerBatchComponent({ app: this.app, engine: this.linkEngine }));
     this.addChild(new SyntaxCheckComponent({ app: this.app, engine: this.linkEngine }));
+    this.htmlCheckComponent = this.addChild(
+      new HtmlCheckComponent({
+        app: this.app,
+        engine: this.linkEngine,
+        onStatusChanged: (): void => {
+          this.renderProblemsViews();
+        }
+      })
+    );
     const repairs = this.addChild(
       new AutoRepairComponent({
         app: this.app,
@@ -172,6 +182,14 @@ export class Plugin extends PluginBase {
     await this.app.workspace.revealLeaf(leaf);
   }
 
+  private renderProblemsViews(): void {
+    for (const leaf of this.app.workspace.getLeavesOfType(PROBLEMS_VIEW_TYPE)) {
+      if (leaf.view instanceof ProblemsView) {
+        leaf.view.render();
+      }
+    }
+  }
+
   private showEditorFixes(problem: RangedLinkProblem, view: EditorView): void {
     const snapshot = view.state.doc;
     const path = getPath();
@@ -183,6 +201,10 @@ export class Plugin extends PluginBase {
         const fixes = await this.problemFixes?.getFixes(problem) ?? [];
         const position = problem.row.position;
         if (!view.dom.isConnected || view.state.doc !== snapshot || getPath() !== path) {
+          return;
+        }
+        if (fixes.length === 0) {
+          this.pluginNoticeComponent.showNotice('No quick fix for this problem: review it by hand.');
           return;
         }
         const coords = view.coordsAtPos(Math.min(position.start.offset, view.state.doc.length));

@@ -33,6 +33,7 @@ describe('Automatic link repair', () => {
           const editor = view.editor as import('obsidian').Editor;
           editor.setSelection({ ch: 2, line: 0 }, { ch: 10, line: 0 });
           editor.focus();
+          const earlierNotices = new Set(document.querySelectorAll('.notice'));
           await pressKey({ key: 'R' });
           try {
             await waitUntil({
@@ -48,7 +49,9 @@ describe('Automatic link repair', () => {
             throw new Error(`${String(error)}: ${JSON.stringify({ headings: app.metadataCache.getFileCache(target)?.headings, notices: [...document.querySelectorAll('.notice')].map((notice) => notice.textContent), other: await app.vault.read(other), problems: plugin.linkEngine?.getProblems(source.path), source: await app.vault.read(source), target: await app.vault.read(target) })}`, { cause: error });
           }
           const repaired = [await app.vault.read(source), await app.vault.read(other)];
-          const undo = [...document.querySelectorAll<HTMLButtonElement>('.notice button')].find((button) => button.textContent === 'Undo');
+          // An earlier suite's notice can still be showing its own Undo, so take the one this repair added.
+          const repairNotice = [...document.querySelectorAll<HTMLElement>('.notice')].find((notice) => !earlierNotices.has(notice) && notice.textContent.includes('Updated links:'));
+          const undo = [...repairNotice?.querySelectorAll<HTMLButtonElement>('button') ?? []].find((button) => button.textContent === 'Undo');
           if (!undo) {
             throw new Error('The repair notice has no Undo button.');
           }

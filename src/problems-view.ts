@@ -49,7 +49,7 @@ export class ProblemsView extends ItemView {
     this.contentEl.addClass('vault-problems-view');
     const controls = this.contentEl.createDiv({ cls: 'vault-problems-filters' });
     const kind = controls.createEl('select', { attr: { 'aria-label': 'Problem kind' } });
-    for (const value of ['', 'link', 'embed', 'frontmatter', 'reference', 'syntax']) {
+    for (const value of ['', 'link', 'embed', 'frontmatter', 'reference', 'syntax', 'html']) {
       kind.createEl('option', { text: value || 'All kinds', value });
     }
     kind.value = this.kind;
@@ -84,6 +84,10 @@ export class ProblemsView extends ItemView {
     this.rows.load();
     list.empty();
     list.createEl('p', { text: `${String([...groups.values()].reduce((count, problems) => count + problems.length, 0))} problem(s)` });
+    const htmlStatus = this.owner.htmlCheckComponent?.statusMessage;
+    if (htmlStatus && (this.kind === '' || this.kind === 'html')) {
+      list.createEl('p', { cls: 'vault-problems-status', text: htmlStatus });
+    }
     for (const [path, problems] of groups) {
       const section = list.createEl('section');
       section.createEl('h3', { text: path });
@@ -118,13 +122,18 @@ export class ProblemsView extends ItemView {
   private renderProblem(parent: HTMLElement, problem: LinkProblem): void {
     const row = parent.createDiv({ cls: 'vault-problems-row' });
     const location = problem.row.position ? `Line ${String(problem.row.position.start.line + 1)}` : `Property ${problem.row.key ?? ''}`;
-    row.createSpan({ cls: 'vault-problems-severity', text: 'Error' });
+    // An HTML finding is a candidate from a lexical index, so it is reviewed rather than asserted.
+    row.createSpan({ cls: problem.html ? 'vault-problems-severity is-warning' : 'vault-problems-severity', text: problem.html ? 'Warning' : 'Error' });
     const open = row.createEl('button', { cls: 'vault-problems-open', text: `${location}: ${problem.message}` });
     this.rows.registerDomEvent(open, 'click', () => {
       invokeAsyncSafely(() => this.openProblem(problem));
     });
     const cause = problem.cause;
     row.createEl('small', { text: cause ? `Broke after ${cause.kind}: ${cause.oldPath ? `${cause.oldPath} → ` : ''}${cause.path}` : 'Standing problem' });
+    // HTML is only reported: deleting markup on a lexical candidate could lose content.
+    if (problem.html) {
+      return;
+    }
     const fix = row.createEl('button', { attr: { 'aria-label': `Quick fixes for ${problem.row.link}` }, text: 'Quick fixes' });
     this.rows.registerDomEvent(fix, 'click', ($event) => {
       invokeAsyncSafely(async () => {

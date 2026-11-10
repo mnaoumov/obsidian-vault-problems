@@ -73,7 +73,7 @@ export class EditorProblems {
             return problem.row.sourcePath === projection.path && position !== null && position.start.offset >= 0 && position.end.offset > position.start.offset && position.end.offset <= view.state.doc.length;
           })
           : [];
-        projection.decorations = Decoration.set(projection.problems.map((problem) => Decoration.mark({ class: 'vault-problems-underline' }).range(problem.row.position.start.offset, problem.row.position.end.offset)), true);
+        projection.decorations = Decoration.set(projection.problems.map((problem) => Decoration.mark({ class: problem.html ? 'vault-problems-underline is-warning' : 'vault-problems-underline' }).range(problem.row.position.start.offset, problem.row.position.end.offset)), true);
       }
       const unsubscribe = params.subscribe((path) => {
         if (path !== undefined && path !== params.getPath(view.state)) {
@@ -105,6 +105,10 @@ export class EditorProblems {
             dom.className = 'vault-problems-tooltip';
             const message = dom.createDiv();
             message.textContent = problem.message;
+            // HTML is only reported, so it offers no fixes.
+            if (problem.html) {
+              return { dom };
+            }
             const button = dom.createEl('button');
             button.textContent = 'Quick fixes';
             button.addEventListener('click', (): void => {
