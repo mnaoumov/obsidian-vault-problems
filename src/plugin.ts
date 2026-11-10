@@ -24,6 +24,7 @@ import {
   PROBLEMS_VIEW_TYPE,
   ProblemsView
 } from './problems-view.ts';
+import { RenameHandlerBatchComponent } from './rename-handler-batch-component.ts';
 import { showRepairNotice } from './repair-notice.ts';
 import { RepairSettingTab } from './repair-setting-tab.ts';
 import { SyntaxCheckComponent } from './syntax-check-component.ts';
@@ -80,6 +81,7 @@ export class Plugin extends PluginBase {
       }
     });
     this.addChild(new LinkEngineComponent({ app: this.app, engine: this.linkEngine }));
+    this.addChild(new RenameHandlerBatchComponent({ app: this.app, engine: this.linkEngine }));
     this.addChild(new SyntaxCheckComponent({ app: this.app, engine: this.linkEngine }));
     const repairs = this.addChild(
       new AutoRepairComponent({

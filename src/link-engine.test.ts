@@ -222,13 +222,22 @@ describe('LinkEngine', () => {
     });
     expect(listener).toHaveBeenCalledOnce();
     expect(notify).not.toHaveBeenCalled(); // The only broken state was repaired before the batch ended.
+    // An externally ended batch can be ended again without closing an outer one.
+    const endOuter = engine.beginBatch();
+    const endInner = engine.beginBatch();
+    endInner();
+    endInner();
+    engine.update({ kind: 'changed', path: source.path });
+    expect(listener).toHaveBeenCalledOnce();
+    endOuter();
+    expect(listener).toHaveBeenCalledTimes(2);
     engine.offref(ref);
     await engine.runInBatch(async () => {
       await engine.runInBatch(async () => {
         await noopAsync();
       });
     });
-    expect(listener).toHaveBeenCalledOnce();
+    expect(listener).toHaveBeenCalledTimes(2);
     expect(engine.getRows(source.path)[0]?.target?.path).toBe(target.path);
   });
 

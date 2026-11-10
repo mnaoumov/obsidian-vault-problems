@@ -59,6 +59,26 @@ export class LinkEngine extends AsyncEventsBase<LinkEngineEventMap> {
   }
 
   /**
+  Opens a batch that another component ends, such as a provider's bulk-operation lifecycle.
+
+  @returns An idempotent end; the outermost end compares every deferred change once.
+  */
+  public beginBatch(): () => void {
+    this.batchDepth++;
+    let isEnded = false;
+    return (): void => {
+      if (isEnded) {
+        return;
+      }
+      isEnded = true;
+      this.batchDepth--;
+      if (this.batchDepth === 0) {
+        this.applyChanges(this.pending.splice(0));
+      }
+    };
+  }
+
+  /**
   All current problems, without another vault scan.
   */
   public getAllProblems(): readonly LinkProblem[] {
@@ -109,15 +129,11 @@ export class LinkEngine extends AsyncEventsBase<LinkEngineEventMap> {
   Defers all comparisons until the outermost operation finishes, even on failure.
   */
   public async runInBatch(operation: () => Promise<void>): Promise<void> {
-    this.batchDepth++;
+    const end = this.beginBatch();
     try {
       await operation();
     } finally {
-      this.batchDepth--;
-      if (this.batchDepth === 0) {
-        const changes = this.pending.splice(0);
-        this.applyChanges(changes);
-      }
+      end();
     }
   }
 
