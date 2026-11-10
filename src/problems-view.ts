@@ -49,7 +49,7 @@ export class ProblemsView extends ItemView {
     this.contentEl.addClass('vault-problems-view');
     const controls = this.contentEl.createDiv({ cls: 'vault-problems-filters' });
     const kind = controls.createEl('select', { attr: { 'aria-label': 'Problem kind' } });
-    for (const value of ['', 'link', 'embed', 'frontmatter', 'reference']) {
+    for (const value of ['', 'link', 'embed', 'frontmatter', 'reference', 'syntax']) {
       kind.createEl('option', { text: value || 'All kinds', value });
     }
     kind.value = this.kind;

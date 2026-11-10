@@ -18,13 +18,25 @@ A copy of the vault ships with every release. You can access it via any of the f
 
 ## Problems view
 
-Run **`Vault Problems`: Open problems** or select the checklist ribbon icon. The side panel lists unresolved links by note, with their location and the change that broke them when known. Click a problem to open its source, or choose **Quick fixes** to select a replacement, create a note or heading, restore a block id, or remove the link while keeping its caption. Related links to a renamed endpoint can be updated together. Every applied fix offers **Undo** and refuses to overwrite later edits.
+Run **`Vault Problems`: Open problems** or select the checklist ribbon icon. The side panel lists unresolved links and syntax problems by note, with their location and the change that broke them when known. Click a problem to open its source, or choose **Quick fixes** to select a replacement, create a note or heading, restore a block id, or remove the link while keeping its caption. Related links to a renamed endpoint can be updated together. Every applied fix offers **Undo** and refuses to overwrite later edits.
 
 Use the kind and folder filters to narrow the list. **Ignore paths in Problems** in settings accepts one path, folder or glob per line: `Archive`, `**/Drafts/**`, or `Private/*.md`. These filters affect the panel. Reference-style unlinking is unavailable in notes containing `%%` comments; replacement targets remain available.
 
 ## Editor problems
 
 Unresolved links with a known source range have a wavy underline in the editor. Hover over an underline and choose **Quick fixes**, or place the cursor inside the link and run **`Vault Problems`: Quick fixes at cursor**. These use the same repairs and Undo as the Problems view. Underlines clear while edits await fresh metadata. Frontmatter links remain in the panel because Obsidian does not supply their exact text ranges.
+
+## Syntax checks
+
+Some mistakes change what a note means without any visible error, so they are reported as problems too:
+
+1. A quoted frontmatter value whose closing quote is missing, so it swallows the property lines after it and Obsidian drops the note's properties. Its quick fix closes the quote at the end of the line.
+2. Frontmatter that does not parse as YAML, reported at the line of the error.
+3. A link destination with no closing `)`, which shows as plain text.
+4. A code span with no closing backticks in its paragraph.
+5. A `%%` comment opener with no closer, which hides the rest of the note.
+
+They appear in the Problems view under the **syntax** kind and as editor underlines. Fenced code blocks and code spans are skipped.
 
 ## See also
 

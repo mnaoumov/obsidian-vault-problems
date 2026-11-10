@@ -1,5 +1,7 @@
 import type { Pos } from 'obsidian';
 
+import type { SyntaxIssue } from './syntax-checks.ts';
+
 /**
 The operation against which a snapshot is compared.
 */
@@ -36,6 +38,10 @@ export interface LinkProblem {
   readonly message: string;
   readonly row: LinkRow;
   readonly status: 'new' | 'standing';
+  /**
+  Present only on a syntax problem, whose row has the syntax kind and no target.
+  */
+  readonly syntax?: SyntaxIssue;
 }
 
 /**
@@ -44,7 +50,7 @@ One metadata reference and its current resolution.
 export interface LinkRow {
   readonly id: string;
   readonly key: null | string;
-  readonly kind: 'embed' | 'frontmatter' | 'link' | 'reference';
+  readonly kind: 'embed' | 'frontmatter' | 'link' | 'reference' | 'syntax';
   readonly link: string;
   /**
   Frontmatter metadata supplies a key rather than an exact text range.

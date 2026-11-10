@@ -14,6 +14,8 @@ Then open [02 Automatic repairs](<./02 Automatic repairs.md>) to edit a heading,
 
 Open [03 Problems](<./03 Problems.md>) for the live list, source navigation, quick fixes, filters and ignored paths.
 
+Open [04 Syntax checks](<./04 Syntax checks.md>) for frontmatter and Markdown mistakes that silently change a note's meaning.
+
 ## Materials
 
 The [source note](<./Materials/01 Live links/Source.md>) and [target note](<./Materials/01 Live links/Target.md>) supply the walkthrough's linked material.

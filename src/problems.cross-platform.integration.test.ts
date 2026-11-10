@@ -9,6 +9,40 @@ import type { Plugin } from './plugin.ts';
 import type { ProblemsView } from './problems-view.ts';
 
 describe('Live Problems view and quick fixes', () => {
+  it('reports a frontmatter quote that swallowed properties and an unclosed comment, and closes the quote', async () => {
+    const result = await evalInObsidian({
+      async callback({ app, lib: { waitUntil } }) {
+        const plugin = app.plugins.getPlugin('vault-problems') as Plugin;
+        const source = await app.vault.create('problems-syntax.md', '---\ntitle: "Unclosed\ntags: [probe]\n---\nText %% never closed\n');
+        function syntaxCodes(): string[] {
+          return (plugin.linkEngine?.getProblems(source.path) ?? []).filter((problem) => problem.syntax).map((problem) => String(problem.syntax?.code));
+        }
+        try {
+          await waitUntil({ predicate: () => syntaxCodes().length === 2, timeoutInMilliseconds: 8000 });
+          const before = syntaxCodes();
+          const problem = plugin.linkEngine?.getProblems(source.path).find((item) => item.syntax?.code === 'unterminated-quote');
+          const fixes = problem ? await plugin.problemFixes?.getFixes(problem) : undefined;
+          const fix = fixes?.[0];
+          if (!fix) {
+            throw new Error('Missing quote fix');
+          }
+          await fix.run();
+          await waitUntil({ predicate: () => syntaxCodes().length === 1, timeoutInMilliseconds: 8000 });
+          await waitUntil({ predicate: () => app.metadataCache.getFileCache(source)?.frontmatter?.['tags'] !== undefined, timeoutInMilliseconds: 8000 });
+          return { after: syntaxCodes(), before, tags: app.metadataCache.getFileCache(source)?.frontmatter?.['tags'] as unknown, text: await app.vault.read(source) };
+        } finally {
+          await app.fileManager.trashFile(source);
+        }
+      }
+    });
+    expect(result).toEqual({
+      after: ['unclosed-comment'],
+      before: ['unterminated-quote', 'unclosed-comment'],
+      tags: ['probe'],
+      text: '---\ntitle: "Unclosed"\ntags: [probe]\n---\nText %% never closed\n'
+    });
+  });
+
   it('unlinks reference use sites and preserves their formatting and code examples', async () => {
     const result = await evalInObsidian({
       async callback({ app, lib: { waitUntil } }) {

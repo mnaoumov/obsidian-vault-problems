@@ -20,6 +20,7 @@ import type {
   LinkRow,
   LinkTarget
 } from './link-model.ts';
+import type { SyntaxIssue } from './syntax-checks.ts';
 
 /**
 Collaborators for a metadata-backed link engine.
@@ -48,6 +49,7 @@ export class LinkEngine extends AsyncEventsBase<LinkEngineEventMap> {
   private readonly pending: LinkChange[] = [];
   private readonly problems = new Map<string, readonly LinkProblem[]>();
   private readonly rows = new Map<string, readonly LinkRow[]>();
+  private readonly syntaxProblems = new Map<string, readonly LinkProblem[]>();
   private readonly targets = new Map<string, Set<string>>();
 
   public constructor(params: LinkEngineConstructorParams) {
@@ -60,14 +62,14 @@ export class LinkEngine extends AsyncEventsBase<LinkEngineEventMap> {
   All current problems, without another vault scan.
   */
   public getAllProblems(): readonly LinkProblem[] {
-    return [...this.problems.values()].flat();
+    return [...this.problems.values(), ...this.syntaxProblems.values()].flat();
   }
 
   /**
-  Current problems for a note, in metadata order.
+  Current problems for a note: link problems in metadata order, then syntax problems in source order.
   */
   public getProblems(sourcePath: string): readonly LinkProblem[] {
-    return this.problems.get(sourcePath) ?? [];
+    return [...this.getLinkProblems(sourcePath), ...this.syntaxProblems.get(sourcePath) ?? []];
   }
 
   /**
@@ -117,6 +119,41 @@ export class LinkEngine extends AsyncEventsBase<LinkEngineEventMap> {
         this.applyChanges(changes);
       }
     }
+  }
+
+  /**
+  Replaces a note's syntax problems, computed from its text, and publishes the change when it differs.
+  */
+  public setSyntaxIssues(sourcePath: string, issues: readonly SyntaxIssue[]): void {
+    if (!this.app.vault.getFileByPath(sourcePath)) {
+      return;
+    }
+    const problems = issues.map((issue): LinkProblem => ({
+      cause: null,
+      message: issue.message,
+      row: {
+        id: `syntax:${issue.code}:${String(issue.position.start.offset)}`,
+        key: null,
+        kind: 'syntax',
+        link: issue.code,
+        position: issue.position,
+        sourcePath,
+        target: null,
+        targetPath: null
+      },
+      status: 'standing',
+      syntax: issue
+    }));
+    const previous = this.syntaxProblems.get(sourcePath) ?? [];
+    if (JSON.stringify(previous.map((problem) => problem.syntax)) === JSON.stringify(issues)) {
+      return;
+    }
+    if (problems.length === 0) {
+      this.syntaxProblems.delete(sourcePath);
+    } else {
+      this.syntaxProblems.set(sourcePath, problems);
+    }
+    this.trigger('changed', { newProblems: [], sourcePaths: [sourcePath] } satisfies LinkEngineChange);
   }
 
   /**
@@ -178,16 +215,25 @@ export class LinkEngine extends AsyncEventsBase<LinkEngineEventMap> {
       }
       // Carry identities across a source rename, so its existing damage does not become new damage.
       const oldRows = this.getRows(change.oldPath);
-      const oldProblems = this.getProblems(change.oldPath);
+      const oldProblems = this.getLinkProblems(change.oldPath);
+      const oldSyntaxProblems = this.syntaxProblems.get(change.oldPath);
       this.removeIndexes(change.oldPath);
       this.rows.delete(change.oldPath);
       this.problems.delete(change.oldPath);
+      this.syntaxProblems.delete(change.oldPath);
       this.rows.set(change.path, oldRows);
       this.problems.set(change.path, oldProblems);
+      if (oldSyntaxProblems) {
+        this.syntaxProblems.set(change.path, oldSyntaxProblems.map((problem) => ({ ...problem, row: { ...problem.row, sourcePath: change.path } })));
+      }
     }
     const first = ensureNonNullable(changes[0]);
     const cause: LinkChange = changes.length === 1 ? first : { changes, kind: 'batch', path: first.path };
     this.recompute([...affected], cause);
+  }
+
+  private getLinkProblems(sourcePath: string): readonly LinkProblem[] {
+    return this.problems.get(sourcePath) ?? [];
   }
 
   private readRows(sourcePath: string, cache: CachedMetadata): LinkRow[] {
@@ -238,7 +284,7 @@ export class LinkEngine extends AsyncEventsBase<LinkEngineEventMap> {
     const newProblems: LinkProblem[] = [];
     for (const path of paths) {
       const previousRows = new Map(this.getRows(path).map((row) => [row.id, row]));
-      const previousProblems = new Map(this.getProblems(path).map((problem) => [problem.row.id, problem]));
+      const previousProblems = new Map(this.getLinkProblems(path).map((problem) => [problem.row.id, problem]));
       this.removeIndexes(path);
       const file = this.app.vault.getFileByPath(path);
       const cache = file ? this.app.metadataCache.getFileCache(file) : null;
@@ -282,6 +328,7 @@ export class LinkEngine extends AsyncEventsBase<LinkEngineEventMap> {
       } else {
         this.rows.delete(path);
         this.problems.delete(path);
+        this.syntaxProblems.delete(path);
       }
     }
     this.trigger('changed', { newProblems, sourcePaths: paths } satisfies LinkEngineChange);

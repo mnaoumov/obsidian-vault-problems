@@ -37,9 +37,11 @@ import type {
   LinkProblem,
   LinkRow
 } from './link-model.ts';
+import type { SyntaxIssue } from './syntax-checks.ts';
 
 import { applyReferenceRepairs } from './reference-repair.ts';
 import { removeReference } from './remove-reference.ts';
+import { findSyntaxIssues } from './syntax-checks.ts';
 
 const BLOCK_PREFIX_LENGTH = 2;
 const BLOCK_PREVIEW_LENGTH = 60;
@@ -80,6 +82,9 @@ export class ProblemFixes {
   public async getFixes(problem: LinkProblem): Promise<ProblemFix[]> {
     const { app } = this.params;
     const { row } = problem;
+    if (problem.syntax) {
+      return this.getSyntaxFixes(row.sourcePath, problem.syntax);
+    }
     const parsed = parseLinktext(decodeLink(row.link));
     const fixes: ProblemFix[] = [];
     const target = row.targetPath && app.vault.getFileByPath(row.targetPath);
@@ -147,7 +152,7 @@ export class ProblemFixes {
       const candidates = ensureNonNullable(new BrokenLinkCandidateFinder({ aliasesByPath, filePaths: app.vault.getFiles().map((file) => file.path), folderNoteFileNames: ['!.md', 'index.md'], gitRenames, titlesByPath }).findAll([path]).get(path));
       for (const candidate of candidates) {
         fixes.push({ label: `Use ${candidate.path} — ${candidate.evidence.map((evidence) => evidence.description).join(' ')}`, run: () => this.retarget([row], candidate.path, subpath) });
-        const related = this.params.getProblems().filter((other) => missingPath(other.row) === path && parseLinktext(decodeLink(other.row.link)).subpath === subpath).map((other) => other.row);
+        const related = this.params.getProblems().filter((other) => other.row.kind !== 'syntax' && missingPath(other.row) === path && parseLinktext(decodeLink(other.row.link)).subpath === subpath).map((other) => other.row);
         if (related.length > 1) {
           fixes.push({ label: `Update ${String(related.length)} links to ${candidate.path}${subpath}`, run: () => this.retarget(related, candidate.path, subpath) });
         }
@@ -196,6 +201,26 @@ export class ProblemFixes {
     }
     const { createDesktopGitRunner } = await import('./desktop-git-runner.ts');
     return await loadGitRenames({ runGit: createDesktopGitRunner(adapter.getBasePath()) });
+  }
+
+  private getSyntaxFixes(path: string, issue: SyntaxIssue): ProblemFix[] {
+    const { fix } = issue;
+    if (!fix) {
+      return [];
+    }
+    return [{
+      label: fix.label,
+      run: async (): Promise<void> => {
+        const file = this.params.app.vault.getFileByPath(path);
+        const before = file ? await readSafe(this.params.app, file) : null;
+        // Re-check at click time: the fix applies only to the text it was computed from.
+        const current = before === null ? undefined : findSyntaxIssues(before).find((candidate) => candidate.code === issue.code && candidate.fix?.offset === fix.offset && candidate.fix.insert === fix.insert);
+        if (before === null || !current) {
+          throw new Error('The note changed since the problem was found. Open quick fixes again.');
+        }
+        await this.commit([{ after: before.slice(0, fix.offset) + fix.insert + before.slice(fix.offset), before, path }]);
+      }
+    }];
   }
 
   private async retarget(rows: readonly LinkRow[], path: string, subpath: string): Promise<void> {
