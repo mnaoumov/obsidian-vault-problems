@@ -32,6 +32,7 @@
     "test:integration:desktop": "jiti scripts/test-integration-desktop.ts",
     "test:integration:desktop:performance": "jiti scripts/test-integration-desktop-performance.ts",
     "test:integration:no-app": "jiti scripts/test-integration-no-app.ts",
+    "test:integration:rename-handler": "jiti scripts/test-integration-rename-handler.ts",
     "test:watch": "jiti scripts/test-watch.ts",
     "version": "jiti scripts/version.ts"
   },

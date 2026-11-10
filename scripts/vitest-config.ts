@@ -21,6 +21,12 @@ const DEMO_VAULT_TEST_FILES = 'src/**/*.demo-vault.integration.test.ts';
 const DEMO_VAULT_TIMEOUT_IN_MILLISECONDS = 600_000;
 
 /**
+ * The suite that drives the released `Advanced Rename and Delete Handler` beside this plugin. Its own project and
+ * suffix keep the provider out of every other suite's vault.
+ */
+const RENAME_HANDLER_TEST_FILES = 'src/**/*.rename-handler.integration.test.ts';
+
+/**
  * Where every `.svelte` / `.vue` import in a unit test's module graph is sent. Compiling a single-file
  * component is the bundler's job, and the plugin that does it is a dependency only of the bundler that
  * was chosen — so a unit test that imports the plugin's own code would otherwise fail on a file vitest
@@ -54,6 +60,14 @@ export const config = defineObsidianPluginVitestConfig({
           include: [DEMO_VAULT_TEST_FILES],
           name: 'integration-tests:demo-vault',
           testTimeout: DEMO_VAULT_TIMEOUT_IN_MILLISECONDS
+        }
+      },
+      {
+        test: {
+          ...context.desktop,
+          globalSetup: ['./scripts/rename-handler-global-setup.ts'],
+          include: [RENAME_HANDLER_TEST_FILES],
+          name: 'integration-tests:rename-handler'
         }
       }
     ];
