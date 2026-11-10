@@ -12,6 +12,9 @@ describe('Editor problem command', () => {
         const source = await app.vault.create('editor-command-probe.md', '[[Editor command missing|Caption]]\n');
         const leaf = app.workspace.getLeaf(true);
         const timeoutInMilliseconds = 5000;
+        // A loaded single-core Android emulator takes several seconds to apply the fix and redraw.
+        // The three waits stay under the 30 s cap of one evalInObsidian call.
+        const fixTimeoutInMilliseconds = 15_000;
         try {
           await leaf.openFile(source, { active: true });
           await app.workspace.revealLeaf(leaf);
@@ -28,7 +31,7 @@ describe('Editor problem command', () => {
             throw new Error('Missing unlink action');
           }
           await clickElement({ element: remove });
-          await waitUntil({ message: 'the editor and diagnostics reflect the fix', predicate: () => view.editor.getValue() === 'Caption\n' && cm.dom.querySelector('.vault-problems-underline') === null, timeoutInMilliseconds });
+          await waitUntil({ message: 'the editor and diagnostics reflect the fix', predicate: () => view.editor.getValue() === 'Caption\n' && cm.dom.querySelector('.vault-problems-underline') === null, timeoutInMilliseconds: fixTimeoutInMilliseconds });
           return view.editor.getValue();
         } finally {
           leaf.detach();
