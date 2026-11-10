@@ -54,6 +54,18 @@ describe('Diagnostic hover', () => {
     view.destroy();
   });
 
+  it('reports an HTML problem with a warning underline and no fixes', () => {
+    const html: LinkProblem['html'] = { kind: 'unknown', range: { html: '<foo>', isClosing: false, kind: 'tag', namespace: 'html', position: { end: { col: 5, line: 0, offset: 5 }, start: { col: 0, line: 0, offset: 0 } }, tagName: 'foo' } };
+    const problem: LinkProblem = { cause: null, html, message: 'Unknown HTML tag <foo>', row: { id: 'html', key: null, kind: 'html', link: '<foo>', position: html.range.position, sourcePath: 'Note.md', target: null, targetPath: null }, status: 'standing' };
+    const diagnostics = new EditorProblems({ getPath: (): string => 'Note.md', getProblems: (): readonly LinkProblem[] => [problem], showFixes: vi.fn(), subscribe: (): () => void => vi.fn() });
+    const view = new EditorView({ parent: document.body, state: EditorState.create({ doc: '<foo> rest', extensions: diagnostics.extension }) });
+    expect(view.contentDOM.querySelector('.vault-problems-underline.is-warning')?.textContent).toBe('<foo>');
+    const content = ensureNonNullable(ensureNonNullable(captured.hover.at(-1))(view, 1)).create(view);
+    expect(content.dom.textContent).toBe('Unknown HTML tag <foo>');
+    expect(content.dom.querySelector('button')).toBeNull();
+    view.destroy();
+  });
+
   it('ignores unrelated engine updates and queued snapshots overtaken by edits', async () => {
     let refresh: (path?: string) => void = vi.fn();
     let path = '';

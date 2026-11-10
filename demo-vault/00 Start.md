@@ -16,6 +16,8 @@ Open [03 Problems](<./03 Problems.md>) for the live list, source navigation, qui
 
 Open [04 Syntax checks](<./04 Syntax checks.md>) for frontmatter and Markdown mistakes that silently change a note's meaning.
 
+Open [05 HTML problems](<./05 HTML problems.md>) for HTML tags that Obsidian does not know or removes when it renders a note.
+
 ## Materials
 
 The [source note](<./Materials/01 Live links/Source.md>) and [target note](<./Materials/01 Live links/Target.md>) supply the walkthrough's linked material.

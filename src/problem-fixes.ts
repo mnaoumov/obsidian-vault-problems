@@ -85,6 +85,10 @@ export class ProblemFixes {
     if (problem.syntax) {
       return this.getSyntaxFixes(row.sourcePath, problem.syntax);
     }
+    // An HTML candidate comes from a lexical index; deleting markup on its word could lose content.
+    if (problem.html) {
+      return [];
+    }
     const parsed = parseLinktext(decodeLink(row.link));
     const fixes: ProblemFix[] = [];
     const target = row.targetPath && app.vault.getFileByPath(row.targetPath);
