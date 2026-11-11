@@ -6,9 +6,12 @@ import {
 } from 'vitest';
 
 describe('Editor problem command', () => {
-  it('opens quick fixes at the cursor and unlinks the selected problem', async () => {
+  it.each([
+    { isSourceMode: true, modeName: 'Source mode' },
+    { isSourceMode: false, modeName: 'Live Preview' }
+  ])('opens quick fixes at the cursor and unlinks the selected problem in $modeName', async ({ isSourceMode }) => {
     const result = await evalInObsidian({
-      async callback({ app, lib: { clickElement, waitUntil } }) {
+      async callback({ app, isSourceMode: shouldUseSourceMode, lib: { clickElement, waitUntil } }) {
         const source = await app.vault.create('editor-command-probe.md', '[[Editor command missing|Caption]]\n');
         const leaf = app.workspace.getLeaf(true);
         const timeoutInMilliseconds = 5000;
@@ -18,7 +21,7 @@ describe('Editor problem command', () => {
         try {
           await leaf.openFile(source, { active: true });
           await app.workspace.revealLeaf(leaf);
-          await leaf.setViewState({ state: { file: source.path, mode: 'source', source: true }, type: 'markdown' });
+          await leaf.setViewState({ state: { file: source.path, mode: 'source', source: shouldUseSourceMode }, type: 'markdown' });
           const view = leaf.view as import('obsidian').MarkdownView;
           const cm = view.editor.cm;
           await waitUntil({ message: 'the link is underlined', predicate: () => cm.dom.querySelector('.vault-problems-underline') !== null, timeoutInMilliseconds });
@@ -32,13 +35,17 @@ describe('Editor problem command', () => {
           }
           await clickElement({ element: remove });
           await waitUntil({ message: 'the editor and diagnostics reflect the fix', predicate: () => view.editor.getValue() === 'Caption\n' && cm.dom.querySelector('.vault-problems-underline') === null, timeoutInMilliseconds: fixTimeoutInMilliseconds });
-          return view.editor.getValue();
+          return {
+            isSourceMode: view.getState().source,
+            value: view.editor.getValue()
+          };
         } finally {
           leaf.detach();
           await app.fileManager.trashFile(source);
         }
-      }
+      },
+      input: { isSourceMode }
     });
-    expect(result).toBe('Caption\n');
+    expect(result).toEqual({ isSourceMode, value: 'Caption\n' });
   });
 });
