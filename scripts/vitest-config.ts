@@ -13,6 +13,14 @@ import { fileURLToPath } from 'node:url';
 const DEMO_VAULT_TEST_FILES = 'src/**/*.demo-vault.integration.test.ts';
 
 /**
+ * The screenshot-capture suite that writes `images/screenshots/screenshot-desktop-*.png`. Named
+ * `*.desktop-capture.` rather than `*.desktop.` so it matches none of the standard project globs: capturing is an
+ * explicit operation (`npm run capture:screenshots`), and folding it into `test:integration` would rewrite the PNGs
+ * on every run.
+ */
+const DESKTOP_CAPTURE_TEST_FILES = 'src/**/*.desktop-capture.integration.test.ts';
+
+/**
  * One `it` per note runs every button in that note, and each button re-opens the note, walks the preview
  * to find itself and then waits for a result. A note with several buttons blows past the desktop
  * project's 30s default — which fails the whole note with a bare vitest timeout instead of naming the
@@ -53,6 +61,13 @@ const STYLESHEET_STUB_PATH = fileURLToPath(new URL('stylesheet-stub.ts', import.
 export const config = defineObsidianPluginVitestConfig({
   customProjects(context: ObsidianPluginVitestConfigContext): TestProjectConfiguration[] {
     return [
+      {
+        test: {
+          ...context.desktop,
+          include: [DESKTOP_CAPTURE_TEST_FILES],
+          name: 'capture-screenshots:desktop'
+        }
+      },
       {
         test: {
           ...context.desktop,
