@@ -1,6 +1,6 @@
 {
   "name": "vault-problems",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "description": "Catches a broken link or a broken frontmatter the moment it breaks, fixes what is unambiguous, and lists every vault problem in one view with quick fixes.",
   "keywords": [],
   "license": "MIT",
