@@ -1,8 +1,25 @@
 # Vault Problems
 
-[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?logo=buy-me-a-coffee&logoColor=black)](https://www.buymeacoffee.com/mnaoumov) [![GitHub release](https://img.shields.io/github/v/release/mnaoumov/obsidian-vault-problems)](https://github.com/mnaoumov/obsidian-vault-problems/releases) [![GitHub downloads](https://img.shields.io/github/downloads/mnaoumov/obsidian-vault-problems/total)](https://github.com/mnaoumov/obsidian-vault-problems/releases)
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?logo=buy-me-a-coffee&logoColor=black)](https://www.buymeacoffee.com/mnaoumov) [![GitHub release](https://img.shields.io/github/v/release/mnaoumov/obsidian-vault-problems)](https://github.com/mnaoumov/obsidian-vault-problems/releases) [![GitHub downloads](https://img.shields.io/github/downloads/mnaoumov/obsidian-vault-problems/total)](https://github.com/mnaoumov/obsidian-vault-problems/releases) [![Coverage: 100%](https://img.shields.io/badge/coverage-100%25-brightgreen)](https://github.com/mnaoumov/obsidian-vault-problems)
 
 Catches a broken link or a broken frontmatter the moment it breaks, fixes what is unambiguous, and lists every vault problem in one view with quick fixes.
+
+Today a broken link is usually found weeks after the edit that broke it, when nobody remembers the edit. `Vault Problems` analyses the vault live, the way an IDE analyses code while it is typed: it compares the links before and after every change, repairs a break at once when exactly one repair exists, and otherwise reports it with the change that caused it.
+
+<!-- markdownlint-disable MD033 -->
+
+<a href="https://github.com/mnaoumov/obsidian-vault-problems/blob/HEAD/images/screenshots/screenshot-desktop-1.png"><img src="images/screenshots/screenshot-desktop-1.png" alt="Every broken link and syntax problem in one live list" width="600"></a>
+
+<details>
+<summary>More screenshots</summary>
+<div>
+<a href="https://github.com/mnaoumov/obsidian-vault-problems/blob/HEAD/images/screenshots/screenshot-desktop-2.png"><img src="images/screenshots/screenshot-desktop-2.png" alt="Quick fixes: pick the heading you meant, create it, or unlink" width="600"></a>
+<a href="https://github.com/mnaoumov/obsidian-vault-problems/blob/HEAD/images/screenshots/screenshot-desktop-3.png"><img src="images/screenshots/screenshot-desktop-3.png" alt="Edit a heading and its links follow, with one-step Undo" width="600"></a>
+<a href="https://github.com/mnaoumov/obsidian-vault-problems/blob/HEAD/images/screenshots/screenshot-desktop-4.png"><img src="images/screenshots/screenshot-desktop-4.png" alt="Broken frontmatter and unclosed comments are caught too" width="600"></a>
+</div>
+</details>
+
+<!-- markdownlint-enable MD033 -->
 
 ## Demo vault
 
@@ -15,6 +32,15 @@ A copy of the vault ships with every release. You can access it via any of the f
 1. Running the **`Vault Problems`: Open demo vault** command.
 2. Downloading `vault-problems-demo-vault.zip` from the [Releases](https://github.com/mnaoumov/obsidian-vault-problems/releases). It unzips into a single `vault-problems-demo-vault-<version>` folder.
 3. Browsing its source in [`demo-vault/`](./demo-vault/README.md) in this repository.
+
+## What it does
+
+1. **Live link analysis.** Every link, embed, frontmatter link and reference-style link is kept with its two ends. After every change the links are compared before and after, so a break is tied to the rename, delete or edit that caused it. See [Live links](<./demo-vault/01 Live links.md>).
+2. **Automatic repairs.** A heading edited in place, or a heading or block cut from one note and pasted into another, takes its links with it. Each repair shows a notice with a one-step **Undo**. See [Automatic repairs](<./demo-vault/02 Automatic repairs.md>).
+3. **Problems view.** One live list of every problem in the vault, grouped by note, with quick fixes. See [Problems](<./demo-vault/03 Problems.md>).
+4. **Editor problems.** The same problems underlined where they are, with the same quick fixes on hover and at the cursor.
+5. **Syntax checks.** Frontmatter that does not parse or swallowed its properties, an unclosed link destination, code span or `%%` comment. See [Syntax checks](<./demo-vault/04 Syntax checks.md>).
+6. **HTML problems.** Tags that Obsidian's sanitizer changes or removes, with `Advanced Metadata Cache` installed. See [HTML problems](<./demo-vault/05 HTML problems.md>).
 
 ## Problems view
 
@@ -50,11 +76,28 @@ There is no quick fix: a tag is found by a lexical scan, so an unusual Markdown 
 
 [My other Obsidian resources](https://mnaoumov.dev/obsidian/)
 
-<!-- Before publishing, search the community plugin directory (https://community.obsidian.md/plugins) and GitHub for similar plugins. Replace the null form below with a table when candidates exist. Sort rows alphabetically by plugin display name; link listed plugins to the store and unlisted ones to their repository. Add (my plugin) or (maintained by me) after the link where applicable. -->
-<!-- Use these columns: Plugin | Features | How `Vault Problems` differs. Keep cells short, with semicolon-separated fragments. Start each difference with the relationship to the other plugin, then what this one adds or omits. Use Supersedes for a retired or fully covered plugin, Extends for an active plugin it builds on, or a concrete relation such as Same goal as or Narrower than. -->
-<!-- Close a populated table with "Last searched for similar plugins on YYYY-MM-DD." When the search finds nothing, keep the sentence below and replace its date. The resources link stays first in either case. -->
+| Plugin | Features | How `Vault Problems` differs |
+| --- | --- | --- |
+| [`Broken Links`](https://community.obsidian.md/plugins/broken-links) | Lists links to notes that do not exist | Same goal as `Broken Links`; adds headings, blocks, embeds, frontmatter and reference links; ties each break to its cause; quick fixes |
+| [`Cairn Vault Linter`](https://community.obsidian.md/plugins/cairn-vault-linter) | Offline vault health report: broken links, duplicate references, block ids, dangling stubs | Same goal as `Cairn Vault Linter`; live instead of a report; repairs unambiguous breaks; quick fixes |
+| [`Consistent Attachments and Links`](https://community.obsidian.md/plugins/consistent-attachments-and-links) (maintained by me) | Moves attachments with notes; batch consistency check; broken-links view | Covers part of `Consistent Attachments and Links`: its broken-link candidates, from the same shared finder; adds a live list, editor underlines, heading and block repairs, syntax checks |
+| [`Dangling links`](https://community.obsidian.md/plugins/obsidian-dangling-links) | Sidebar of links that point at nothing | Same goal as `Dangling links`; adds headings, blocks and frontmatter; the cause of each break; quick fixes; automatic repairs |
+| [`Dangling links with replace`](https://community.obsidian.md/plugins/dangling-links-with-replace) | Lists dangling links in the vault and replaces them | Same goal as `Dangling links with replace`; adds headings, blocks and frontmatter, the cause of each break, automatic repairs and editor underlines |
+| [`Find orphaned files and broken links`](https://community.obsidian.md/plugins/find-unlinked-files) | Lists files with no backlinks and links to missing files, on demand | Same goal as `Find orphaned files and broken links` for broken links; live instead of on demand; adds headings, blocks, causes and repairs; omits orphaned files |
+| [`Frontmatter Link Repair`](https://community.obsidian.md/plugins/frontmatter-link-repair) | Finds unquoted wikilinks in frontmatter and quotes them, with a preview and a restore copy | Overlaps `Frontmatter Link Repair` on frontmatter: reports YAML that does not parse and closes an unterminated quote; does not quote bare wikilinks |
+| [`Link Doctor`](https://community.obsidian.md/plugins/link-doctor) | Side panel and dashboard of broken links, headings, blocks and embeds; empty notes; no fixes by design | Same goal as `Link Doctor`; adds the change that caused each break, automatic repairs, quick fixes, editor underlines, syntax checks |
+| [`Link Integrity`](https://community.obsidian.md/plugins/link-integrity) | Continuously finds broken internal links and isolated files; no edits | Same goal as `Link Integrity`; adds headings, blocks and frontmatter, causes, automatic repairs and quick fixes; omits isolated files |
+| [`Markdownlint`](https://community.obsidian.md/plugins/markdownlint) | `markdownlint` style rules in the editor | Different rule set from `Markdownlint`: links and meaning-changing syntax rather than style |
+| [`Note Schemas`](https://community.obsidian.md/plugins/note-schemas) | Frontmatter validation against typed schemas; autocomplete; autofix | Different rule set from `Note Schemas`: frontmatter that does not parse at all, rather than values against a schema |
+| [`Orbital`](https://community.obsidian.md/plugins/orbital) | Sidebar of note relations; fixes dangling links in bulk; recent files | Narrower than `Orbital`: problems only; adds headings, blocks, causes, automatic repairs, syntax checks |
+| [`Persistent Links`](https://community.obsidian.md/plugins/persistent-links) | Repairs heading and block links when a heading or block is moved between notes; wikilinks only | Same goal as `Persistent Links` for moves; adds Markdown, frontmatter and reference links, heading edits in place, one-step Undo, and reports what it cannot repair |
+| [`rumdl`](https://community.obsidian.md/plugins/rumdl) | Markdown lint with the `rumdl` linter | Different rule set from `rumdl`: links and meaning-changing syntax rather than style |
+| [`Structured Context`](https://community.obsidian.md/plugins/structured-context) | Validates notes against structured-context schemas, with inline editor diagnostics | Different rule set from `Structured Context`: links and syntax rather than schemas |
+| [`Vault Inspector`](https://community.obsidian.md/plugins/vault-inspector) | Vault scan for broken links, orphan attachments, duplicates, frontmatter, unused tags, large files | Narrower than `Vault Inspector`: links and syntax only; live instead of a scan; causes, automatic repairs, quick fixes |
+| [`Vault Link Check`](https://community.obsidian.md/plugins/vault-link-check) | Scans for broken internal links; near-miss names versus planned notes | Same goal as `Vault Link Check`; live instead of a scan; adds headings, blocks, causes and automatic repairs |
+| [`Vault Plus`](https://community.obsidian.md/plugins/vault-plus) | Vault health dashboard: orphans, broken links, empty notes, duplicates, unused tags; one-click fixes | Narrower than `Vault Plus`: links and syntax only; live instead of a dashboard; ties each break to its cause; automatic repairs |
 
-No similar plugin was found when this was last searched for, on YYYY-MM-DD.
+Last searched for similar plugins on 2026-11-10.
 
 ## Installation
 
