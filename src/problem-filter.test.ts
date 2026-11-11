@@ -42,4 +42,12 @@ describe('Problems filters', () => {
     expect([...groupProblems(items, { folder: '/a/', ignoredPaths: [], kind: 'frontmatter' }).values()].flat()).toEqual([items[3]]);
     expect(groupProblems(items, { folder: '', ignoredPaths: ['**/x.md'], kind: '' }).size).toBe(0);
   });
+
+  it('groups by kind in heading order, drops empty kinds, and keeps note order inside a kind', () => {
+    const items = [problem('b/x.md', 4, 'syntax'), problem('b/x.md', 1), problem('a/x.md', 9), problem('a/x.md', null, 'frontmatter')];
+    const byKind = groupProblems(items, { folder: '', ignoredPaths: [], kind: '' }, 'kind');
+    expect([...byKind.keys()]).toEqual(['frontmatter', 'link', 'syntax']);
+    expect(byKind.get('link')?.map((item) => item.row.sourcePath)).toEqual(['a/x.md', 'b/x.md']);
+    expect([...groupProblems(items, { folder: 'b', ignoredPaths: [], kind: '' }, 'kind').keys()]).toEqual(['link', 'syntax']);
+  });
 });

@@ -22,7 +22,10 @@ import {
 import type { LinkProblem } from './link-model.ts';
 
 import { Plugin } from './plugin.ts';
-import { ProblemsView } from './problems-view.ts';
+import {
+  PROBLEMS_PAGE_SIZE,
+  ProblemsView
+} from './problems-view.ts';
 
 const manifest: PluginManifest = { author: 'test', description: 'test', id: 'vault-problems', minAppVersion: '1.14.5', name: 'Vault Problems', version: '0.0.0' };
 
@@ -183,6 +186,67 @@ describe('Problems panel', () => {
     await settle();
     expect(error).toHaveBeenCalledWith(new Error('Cannot load'));
     expect(view.contentEl.querySelector<HTMLButtonElement>('[aria-label="Quick fixes for Missing"]')?.disabled).toBe(false);
+    view.unload();
+    plugin.unload();
+  });
+
+  it('collapses a large file group, toggles groups, and pages groups and rows', async () => {
+    const { plugin, problem, problems, view } = await fixture();
+    function header(): HTMLButtonElement {
+      return ensureNonNullable(view.contentEl.querySelector<HTMLButtonElement>('.vault-problems-group-header'));
+    }
+    function rowCount(): number {
+      return view.contentEl.querySelectorAll('.vault-problems-row').length;
+    }
+    function button(text: string): HTMLButtonElement {
+      return ensureNonNullable([...view.contentEl.querySelectorAll<HTMLButtonElement>('button')].find((candidate) => candidate.textContent.startsWith(text)));
+    }
+    expect(header().getAttribute('aria-expanded')).toBe('true');
+    expect(header().textContent).toBe('Folder/Source.md1');
+    expect(rowCount()).toBe(1);
+    header().click();
+    expect(header().getAttribute('aria-expanded')).toBe('false');
+    expect(rowCount()).toBe(0);
+    header().click();
+    expect(rowCount()).toBe(1);
+
+    // Another note: the toggles above are remembered for Folder/Source.md.
+    const many = Array.from({ length: PROBLEMS_PAGE_SIZE + 5 }, (_, index) => ({ ...problem, row: { ...problem.row, id: String(index), sourcePath: 'Folder/Large.md' } }));
+    problems.splice(0, problems.length, ...many);
+    view.render();
+    expect(view.contentEl.textContent).toContain(`${String(many.length)} problem(s) in 1 file(s)`);
+    expect(header().getAttribute('aria-expanded')).toBe('false');
+    expect(rowCount()).toBe(0);
+    button('Expand all').click();
+    expect(rowCount()).toBe(PROBLEMS_PAGE_SIZE);
+    button('Show 5 more').click();
+    expect(rowCount()).toBe(many.length);
+    button('Collapse all').click();
+    expect(rowCount()).toBe(0);
+
+    const files = Array.from({ length: PROBLEMS_PAGE_SIZE + 1 }, (_, index) => ({ ...problem, row: { ...problem.row, id: String(index), sourcePath: `Note ${String(index).padStart(3, '0')}.md` } }));
+    problems.splice(0, problems.length, ...files);
+    view.render();
+    expect(view.contentEl.querySelectorAll('.vault-problems-group')).toHaveLength(PROBLEMS_PAGE_SIZE);
+    button('Show 1 more').click();
+    expect(view.contentEl.querySelectorAll('.vault-problems-group')).toHaveLength(files.length);
+    view.unload();
+    plugin.unload();
+  });
+
+  it('groups by kind, naming the note on each row', async () => {
+    const { plugin, problem, problems, view } = await fixture();
+    problems.push({ ...problem, message: 'Unclosed code span', row: { ...problem.row, id: '2', kind: 'syntax' } });
+    const grouping = ensureNonNullable(view.contentEl.querySelector<HTMLSelectElement>('select[aria-label="Group by"]'));
+    grouping.value = 'kind';
+    grouping.dispatchEvent(new Event('change'));
+    const titles = [...view.contentEl.querySelectorAll('.vault-problems-group-title')].map((title) => title.textContent);
+    expect(titles).toEqual(['Links', 'Syntax']);
+    expect(view.contentEl.textContent).toContain('2 problem(s) in 2 kind(s)');
+    expect(view.contentEl.textContent).toContain('Folder/Source.md, Line 1: Unclosed code span');
+    grouping.value = 'file';
+    grouping.dispatchEvent(new Event('change'));
+    expect([...view.contentEl.querySelectorAll('.vault-problems-group-title')].map((title) => title.textContent)).toEqual(['Folder/Source.md']);
     view.unload();
     plugin.unload();
   });

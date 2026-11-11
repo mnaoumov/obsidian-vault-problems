@@ -46,6 +46,8 @@ A copy of the vault ships with every release. You can access it via any of the f
 
 Run **`Vault Problems`: Open problems** or select the checklist ribbon icon. The side panel lists unresolved links, syntax problems and HTML problems by note, with their location and the change that broke them when known. Click a problem to open its source, or choose **Quick fixes** to select a replacement, create a note or heading, restore a block id, or remove the link while keeping its caption. Related links to a renamed endpoint can be updated together. Every applied fix offers **Undo** and refuses to overwrite later edits.
 
+Each note is one collapsible group headed by its problem count. A note with more than 10 problems starts collapsed, so one noisy note does not push the rest off screen. **Expand all** and **Collapse all** act on every group. Switch **Group by file** to **Group by kind** to see all broken links, embeds, syntax problems and so on together, each row naming its note. Large results are shown 100 groups, and 100 rows per group, at a time, with a **Show more** button, so the panel stays responsive on a vault with tens of thousands of problems.
+
 Use the kind and folder filters to narrow the list. **Ignore paths in Problems** in settings accepts one path, folder or glob per line: `Archive`, `**/Drafts/**`, or `Private/*.md`. These filters affect the panel. Reference-style unlinking is unavailable in notes containing `%%` comments; replacement targets remain available.
 
 ## Editor problems
