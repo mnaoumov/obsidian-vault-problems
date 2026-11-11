@@ -18,6 +18,56 @@
   gap: var(--size-4-2);
 }
 
+.vault-problems-group {
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.vault-problems-group-header {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-1);
+  width: 100%;
+  height: auto;
+  padding: var(--size-4-1) 0;
+  background: none;
+  box-shadow: none;
+  text-align: start;
+  white-space: normal;
+}
+
+.vault-problems-group-icon {
+  display: flex;
+  flex: none;
+  color: var(--text-muted);
+}
+
+.vault-problems-group-title {
+  flex: 1;
+  overflow-wrap: anywhere;
+  font-weight: var(--font-semibold);
+}
+
+.vault-problems-group-count {
+  flex: none;
+  padding: 0 var(--size-4-2);
+  border-radius: var(--radius-l);
+  background-color: var(--background-modifier-hover);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.vault-problems-group-body {
+  padding-inline-start: var(--size-4-5);
+
+  > .vault-problems-row:last-child {
+    border-bottom: none;
+  }
+}
+
+.vault-problems-more {
+  margin: var(--size-4-2) 0;
+}
+
 .vault-problems-row {
   display: flex;
   flex-direction: column;
