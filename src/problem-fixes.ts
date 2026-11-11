@@ -39,7 +39,6 @@ import type {
 } from './link-model.ts';
 import type { SyntaxIssue } from './syntax-checks.ts';
 
-import { applyReferenceRepairs } from './reference-repair.ts';
 import { removeReference } from './remove-reference.ts';
 import { findSyntaxIssues } from './syntax-checks.ts';
 
@@ -245,7 +244,8 @@ export class ProblemFixes {
       // Refuse a stale UI row rather than editing a neighboring link after the user types.
       const originalCache = await parseMetadata(app, before);
       const selectedDefinitions = (originalCache.referenceLinks ?? []).filter((reference) => selected.some((row) => row.kind === 'reference' && row.link === reference.link && row.position?.start.offset === reference.position.start.offset));
-      const converted = await editReferencesInContent({
+      // Body links and definitions are rewritten in one pass against the same metadata, so offsets stay consistent.
+      let after = await editReferencesInContent({
         app,
         content: before,
         referenceConverter: (reference) => {
@@ -254,17 +254,24 @@ export class ProblemFixes {
           }
           const parsed = parseLink(reference.original);
           return target ? generateMarkdownLink({ app, originalLink: reference.original, sourcePathOrFile: file, subpath: target.subpath, targetPathOrFile: target.path, ...(parsed?.alias !== undefined && { alias: parsed.alias }) }) : parsed?.alias ?? reference.link;
+        },
+        referenceDefinitionConverter: (definition) => {
+          const isSelected = selectedDefinitions.some((selectedDefinition) => selectedDefinition.link === definition.link && selectedDefinition.position.start.offset === definition.position.start.offset);
+          if (!target || !isSelected) {
+            return;
+          }
+          const generated = generateMarkdownLink({
+            alias: 'reference',
+            app,
+            linkStyle: LinkStyle.Markdown,
+            originalLink: `[reference](<${definition.link}>)`,
+            sourcePathOrFile: file,
+            subpath: target.subpath,
+            targetPathOrFile: target.path
+          });
+          return encodeUrl(ensureNonNullable(parseLink(generated)).url, true);
         }
       });
-      // Reparse after body edits so definitions use their current positions in a mixed batch.
-      const convertedCache = await parseMetadata(app, converted);
-      const referenceRepairs = target
-        ? (convertedCache.referenceLinks ?? []).filter((reference) => selectedDefinitions.some((definition) => definition.id === reference.id && definition.link === reference.link)).map((reference) => ({
-          destination: encodeUrl(ensureNonNullable(parseLink(generateMarkdownLink({ alias: 'reference', app, linkStyle: LinkStyle.Markdown, originalLink: `[reference](<${reference.link}>)`, sourcePathOrFile: file, subpath: target.subpath, targetPathOrFile: target.path }))).url, true),
-          reference
-        }))
-        : [];
-      let after = applyReferenceRepairs(converted, referenceRepairs);
       if (!target) {
         for (const reference of selectedDefinitions) {
           after = removeReference(after, reference);

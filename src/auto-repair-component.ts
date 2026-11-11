@@ -33,14 +33,12 @@ import {
 } from 'obsidian';
 
 import type { LinkRow } from './link-model.ts';
-import type { ReferenceRepair } from './reference-repair.ts';
 
 import {
   detectHeadingEdit,
   matchCutPaste
 } from './auto-repair.ts';
 import { LinkEngine } from './link-engine.ts';
-import { applyReferenceRepairs } from './reference-repair.ts';
 
 /**
 Runtime collaborators; notices stay owned by the plugin.
@@ -275,27 +273,22 @@ export class AutoRepairComponent extends Component {
     return ready;
   }
 
-  private async getReferenceRepairs(source: TFile, content: string, intents: readonly RepairIntent[]): Promise<readonly ReferenceRepair[]> {
-    const { app } = this.params;
-    const cache = await parseMetadata(app, content);
-    return (cache.referenceLinks ?? []).flatMap((reference) => {
-      const intent = this.findIntent(reference.link, source, intents);
-      if (!intent) {
-        return [];
-      }
-      const generated = generateMarkdownLink({
-        alias: 'reference',
-        app,
-        linkStyle: LinkStyle.Markdown,
-        originalLink: `[reference](<${reference.link}>)`,
-        shouldUseAngleBrackets: false,
-        sourcePathOrFile: source,
-        subpath: intent.newSubpath,
-        targetPathOrFile: intent.newPath
-      });
-      const destination = encodeUrl(ensureNonNullable(parseLink(generated)).url, true);
-      return { destination, reference };
+  private getReferenceDestination(source: TFile, link: string, intents: readonly RepairIntent[]): string | undefined {
+    const intent = this.findIntent(link, source, intents);
+    if (!intent) {
+      return undefined;
+    }
+    const generated = generateMarkdownLink({
+      alias: 'reference',
+      app: this.params.app,
+      linkStyle: LinkStyle.Markdown,
+      originalLink: `[reference](<${link}>)`,
+      shouldUseAngleBrackets: false,
+      sourcePathOrFile: source,
+      subpath: intent.newSubpath,
+      targetPathOrFile: intent.newPath
     });
+    return encodeUrl(ensureNonNullable(parseLink(generated)).url, true);
   }
 
   private readCurrent(file: TFile): Promise<null | string> {
@@ -357,10 +350,9 @@ export class AutoRepairComponent extends Component {
       if (before === null) {
         continue;
       }
-      const referenceRepairs = await this.getReferenceRepairs(file, before, ready);
       const after = await editReferencesInContent({
         app,
-        content: applyReferenceRepairs(before, referenceRepairs),
+        content: before,
         referenceConverter: (reference) => {
           const intent = this.findIntent(reference.link, file, ready);
           if (!intent) {
@@ -375,7 +367,8 @@ export class AutoRepairComponent extends Component {
             targetPathOrFile: intent.newPath,
             ...(original?.alias !== undefined && { alias: original.alias })
           });
-        }
+        },
+        referenceDefinitionConverter: (definition) => this.getReferenceDestination(file, definition.link, ready)
       });
       if (before !== after) {
         edits.push({ after, before, path });
