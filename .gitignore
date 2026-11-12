@@ -25,6 +25,5 @@ data.json
 dist
 coverage
 .env
-.cache
 /tsconfig.tsbuildinfo
 styles.css

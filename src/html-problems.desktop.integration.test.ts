@@ -10,6 +10,7 @@ The released plugin is written into the vault and enabled inside the closure, th
 other suites sharing the vault never see it.
 */
 
+import { downloadReleasedPlugin } from '@mnaoumov/obsidian-dev-toolkit/test-runners/released-plugin';
 import { evalInObsidian } from 'obsidian-integration-testing';
 import {
   describe,
@@ -18,8 +19,6 @@ import {
 } from 'vitest';
 
 import type { Plugin } from './plugin.ts';
-
-import { downloadReleasedPlugin } from '../scripts/helpers/download-released-plugin.ts';
 
 const ADVANCED_METADATA_CACHE_PLUGIN_ID = 'advanced-metadata-cache';
 const ADVANCED_METADATA_CACHE_REPO = 'mnaoumov/obsidian-advanced-metadata-cache';
