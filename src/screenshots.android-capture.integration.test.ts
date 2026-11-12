@@ -176,7 +176,7 @@ describe('mobile store screenshots', () => {
       vaultPath: vaultPath()
     });
     expect(labels).toContain('Remove link, keep text');
-    await shoot(2, 'Quick fixes: pick the heading you meant, create it, or unlink');
+    await shoot(2, 'Quick fixes: pick the right heading, create it, or unlink');
   }, TEST_TIMEOUT_IN_MILLISECONDS);
 });
 
