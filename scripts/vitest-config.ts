@@ -21,6 +21,27 @@ const DEMO_VAULT_TEST_FILES = 'src/**/*.demo-vault.integration.test.ts';
 const DESKTOP_CAPTURE_TEST_FILES = 'src/**/*.desktop-capture.integration.test.ts';
 
 /**
+ * The mobile counterpart, writing `images/screenshots/screenshot-mobile-*.png`, named `*.android-capture.` for the
+ * same reason.
+ */
+const ANDROID_CAPTURE_TEST_FILES = 'src/**/*.android-capture.integration.test.ts';
+
+/**
+ * The AVD the mobile shots are taken on: 900x1600, exactly the listing size, so the capture needs no crop, rescale
+ * or letterbox. The shared `obsidian_test` AVD cannot produce it, and resizing it at runtime recreates the activity
+ * and with it the WebView the Appium session is attached to.
+ */
+const SCREENSHOT_AVD_NAME = 'obsidian_screenshots';
+
+const APPIUM_URL = 'http://localhost:4723';
+
+/**
+ * The screenshot AVD is cold-booted and rarely used, so Obsidian's first layout on it is far slower than on the
+ * shared one, and the 90s default expires while it is still starting up.
+ */
+const LAYOUT_READY_TIMEOUT_IN_MILLISECONDS = 240_000;
+
+/**
  * One `it` per note runs every button in that note, and each button re-opens the note, walks the preview
  * to find itself and then waits for a result. A note with several buttons blows past the desktop
  * project's 30s default — which fails the whole note with a bare vitest timeout instead of naming the
@@ -66,6 +87,21 @@ export const config = defineObsidianPluginVitestConfig({
           ...context.desktop,
           include: [DESKTOP_CAPTURE_TEST_FILES],
           name: 'capture-screenshots:desktop'
+        }
+      },
+      {
+        test: {
+          ...context.android,
+          environmentOptions: {
+            obsidianTransport: {
+              appiumUrl: APPIUM_URL,
+              avdName: SCREENSHOT_AVD_NAME,
+              layoutReadyTimeoutInMilliseconds: LAYOUT_READY_TIMEOUT_IN_MILLISECONDS,
+              type: 'obsidian-android-appium'
+            }
+          },
+          include: [ANDROID_CAPTURE_TEST_FILES],
+          name: 'capture-screenshots:android'
         }
       },
       {

@@ -16,6 +16,8 @@ Today a broken link is usually found weeks after the edit that broke it, when no
 <a href="https://github.com/mnaoumov/obsidian-vault-problems/blob/HEAD/images/screenshots/screenshot-desktop-2.png"><img src="images/screenshots/screenshot-desktop-2.png" alt="Quick fixes: pick the heading you meant, create it, or unlink" width="600"></a>
 <a href="https://github.com/mnaoumov/obsidian-vault-problems/blob/HEAD/images/screenshots/screenshot-desktop-3.png"><img src="images/screenshots/screenshot-desktop-3.png" alt="Edit a heading and its links follow, with one-step Undo" width="600"></a>
 <a href="https://github.com/mnaoumov/obsidian-vault-problems/blob/HEAD/images/screenshots/screenshot-desktop-4.png"><img src="images/screenshots/screenshot-desktop-4.png" alt="Broken frontmatter and unclosed comments are caught too" width="600"></a>
+<a href="https://github.com/mnaoumov/obsidian-vault-problems/blob/HEAD/images/screenshots/screenshot-mobile-1.png"><img src="images/screenshots/screenshot-mobile-1.png" alt="Every broken link and syntax problem in one live list" width="270"></a>
+<a href="https://github.com/mnaoumov/obsidian-vault-problems/blob/HEAD/images/screenshots/screenshot-mobile-2.png"><img src="images/screenshots/screenshot-mobile-2.png" alt="Quick fixes: pick the right heading, create it, or unlink" width="270"></a>
 </div>
 </details>
 
