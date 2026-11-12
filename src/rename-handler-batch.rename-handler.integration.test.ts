@@ -43,7 +43,7 @@ describe('Rename handler bulk operations', () => {
         }
         const timeoutInMilliseconds = 8000;
         function getApi(): AdvancedRenameAndDeleteHandlerApi | undefined {
-          return (window as RegistryHolder).__obsidianLib?.pluginApiRegistry?.value.records['advanced-rename-and-delete-handler']
+          return (globalThis as RegistryHolder).__obsidianLib?.pluginApiRegistry?.value.records['advanced-rename-and-delete-handler']
             ?.find((record) => !record.isRevoked && record.apiVersion === '1.4.0')?.api;
         }
         await waitUntil({ message: 'the provider publishes contract 1.4.0', predicate: () => Boolean(getApi()), timeoutInMilliseconds });
@@ -110,7 +110,7 @@ describe('Rename handler bulk operations', () => {
         }
         const timeoutInMilliseconds = 8000;
         function getApi(): AdvancedRenameAndDeleteHandlerApi | undefined {
-          return (window as RegistryHolder).__obsidianLib?.pluginApiRegistry?.value.records['advanced-rename-and-delete-handler']
+          return (globalThis as RegistryHolder).__obsidianLib?.pluginApiRegistry?.value.records['advanced-rename-and-delete-handler']
             ?.find((record) => !record.isRevoked && record.apiVersion === '1.4.0')?.api;
         }
         await waitUntil({ message: 'the provider publishes contract 1.4.0', predicate: () => Boolean(getApi()), timeoutInMilliseconds });
