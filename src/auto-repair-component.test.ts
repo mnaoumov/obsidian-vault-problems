@@ -401,6 +401,52 @@ describe('Automatic repairs', () => {
     component.unload();
   });
 
+  it('keeps a pending cut across a rename and a delete of unrelated files', async () => {
+    const { app, caches, component, notify, source, target } = await fixture();
+    const destination = await app.vault.create('Destination.md', '');
+    const unrelated = await app.vault.create('Unrelated.md', '');
+    caches.set(destination.path, {});
+    const state = EditorState.create({ doc: '# Original\n' });
+    component.observe(target.path, state.update({ annotations: Transaction.userEvent.of('delete.cut'), changes: { from: 0, to: state.doc.length } }));
+    await app.vault.modify(target, '');
+    caches.set(target.path, {});
+    app.vault.trigger('rename', unrelated, 'Other.md');
+    app.vault.trigger('delete', unrelated);
+    // A folder that merely shares a name prefix with the target is unrelated too.
+    app.vault.trigger('delete', castTo({ path: 'Tar' }));
+    component.observe(destination.path, EditorState.create({ doc: '' }).update({ annotations: Transaction.userEvent.of('input.paste'), changes: { from: 0, insert: '# Original\n' } }));
+    await app.vault.modify(destination, '# Original\n');
+    caches.set(destination.path, heading('Original'));
+    app.metadataCache.trigger('resolved');
+    await vi.waitFor(() => {
+      expect(notify).toHaveBeenCalledOnce();
+    });
+    expect(await app.vault.read(source)).toBe('[[Destination#Original|Label]]\n');
+    component.unload();
+  });
+
+  it.each([
+    ['cut note', 'Target.md'],
+    ['backlink source', 'Source.md']
+  ])('drops a pending cut when its %s is renamed', async (_scenario, oldPath) => {
+    const { app, caches, component, notify, source, target } = await fixture();
+    const destination = await app.vault.create('Destination.md', '');
+    caches.set(destination.path, {});
+    const state = EditorState.create({ doc: '# Original\n' });
+    component.observe(target.path, state.update({ annotations: Transaction.userEvent.of('delete.cut'), changes: { from: 0, to: state.doc.length } }));
+    await app.vault.modify(target, '');
+    caches.set(target.path, {});
+    expect([source.path, target.path]).toContain(oldPath);
+    app.vault.trigger('rename', castTo({ path: 'Moved.md' }), oldPath);
+    component.observe(destination.path, EditorState.create({ doc: '' }).update({ annotations: Transaction.userEvent.of('input.paste'), changes: { from: 0, insert: '# Original\n' } }));
+    await app.vault.modify(destination, '# Original\n');
+    caches.set(destination.path, heading('Original'));
+    app.metadataCache.trigger('resolved');
+    await settle();
+    expect(notify).not.toHaveBeenCalled();
+    component.unload();
+  });
+
   it('coalesces consecutive heading keystrokes without losing the original backlink snapshot', async () => {
     const { app, caches, component, notify, source, target } = await fixture();
     const first = EditorState.create({ doc: '# Original\n' }).update({ annotations: Transaction.userEvent.of('input.type'), changes: { from: 2, insert: 'R', to: 10 } });
