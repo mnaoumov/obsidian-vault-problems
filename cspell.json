@@ -36,6 +36,7 @@
     "hotreload",
     "inlines",
     "jiti",
+    "katex",
     "lezer",
     "Linkpath",
     "Linktext",
