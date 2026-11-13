@@ -36,7 +36,9 @@ import type { LinkRow } from './link-model.ts';
 
 import {
   detectHeadingEdit,
-  matchCutPaste
+  isSplitImePasteStart,
+  matchCutPaste,
+  matchSplitImePaste
 } from './auto-repair.ts';
 import { LinkEngine } from './link-engine.ts';
 
@@ -66,6 +68,15 @@ interface CutEvidence {
   readonly transaction: Transaction;
 }
 
+/**
+The first half of an input-method paste whose final line break arrives as the next transaction.
+*/
+interface ImePasteEvidence {
+  readonly cut: CutEvidence;
+  readonly first: Transaction;
+  readonly path: string;
+}
+
 interface RepairIntent {
   readonly expected: string;
   readonly newPath: string;
@@ -93,6 +104,7 @@ export class AutoRepairComponent extends Component {
   });
 
   private cut: CutEvidence | null = null;
+  private imePaste: ImePasteEvidence | null = null;
   private intents: RepairIntent[] = [];
   private isActive = false;
   private isApplying = false;
@@ -138,6 +150,7 @@ export class AutoRepairComponent extends Component {
       if (this.cut?.path === path && this.cut.transaction.newDoc.toString() !== content) {
         this.cut = null;
       }
+      this.imePaste = null;
       this.intents = this.intents.filter((intent) => intent.newPath !== path || intent.expected === content);
       return;
     }
@@ -147,14 +160,7 @@ export class AutoRepairComponent extends Component {
       this.intents = this.intents.filter((intent) => intent.newPath !== path);
       return;
     }
-    const cut = this.cut;
-    this.cut = null;
-    if (cut && transaction.isUserEvent('input.paste')) {
-      const move = matchCutPaste(cut.transaction, transaction);
-      if (move && cut.path !== path) {
-        invokeAsyncSafely(() => this.recordMove(cut, path, transaction, move.from, move.to, move.text.length));
-      }
-    }
+    this.observePaste(path, transaction);
     const before = transaction.startState.doc.toString();
     const after = transaction.newDoc.toString();
     const edit = detectHeadingEdit(before, after);
@@ -185,6 +191,7 @@ export class AutoRepairComponent extends Component {
       this.isActive = false;
       this.intents = [];
       this.cut = null;
+      this.imePaste = null;
     });
     this.registerEvent(this.params.app.metadataCache.on('resolved', () => {
       this.schedule();
@@ -215,12 +222,16 @@ export class AutoRepairComponent extends Component {
 
   private clear(): void {
     this.cut = null;
+    this.imePaste = null;
     this.intents = [];
   }
 
   private clearTouching(operationPaths: readonly string[]): void {
-    if (this.cut && (isTouched(operationPaths, this.cut.path) || hasTouchedSource(operationPaths, this.cut.rows))) {
+    if (this.cut && isCutTouched(operationPaths, this.cut)) {
       this.cut = null;
+    }
+    if (this.imePaste && (isTouched(operationPaths, this.imePaste.path) || isCutTouched(operationPaths, this.imePaste.cut))) {
+      this.imePaste = null;
     }
     this.intents = this.intents.filter((intent) => !isTouched(operationPaths, intent.oldPath) && !isTouched(operationPaths, intent.newPath) && !hasTouchedSource(operationPaths, intent.rows));
   }
@@ -297,6 +308,32 @@ export class AutoRepairComponent extends Component {
       targetPathOrFile: intent.newPath
     });
     return encodeUrl(ensureNonNullable(parseLink(generated)).url, true);
+  }
+
+  /**
+  Matches a user edit against the pending cut: a paste completes it, and the first half of a split input-method paste
+  is kept for exactly one more transaction in the same note.
+  */
+  private observePaste(path: string, transaction: Transaction): void {
+    const cut = this.cut;
+    this.cut = null;
+    const imePaste = this.imePaste;
+    this.imePaste = null;
+    if (cut && cut.path !== path) {
+      const move = matchCutPaste(cut.transaction, transaction);
+      if (move) {
+        invokeAsyncSafely(() => this.recordMove(cut, path, transaction, move.from, move.to, move.text.length));
+      } else if (isSplitImePasteStart(cut.transaction, transaction)) {
+        this.imePaste = { cut, first: transaction, path };
+      }
+    }
+    if (imePaste?.path !== path) {
+      return;
+    }
+    const move = matchSplitImePaste(imePaste.cut.transaction, imePaste.first, transaction);
+    if (move) {
+      invokeAsyncSafely(() => this.recordMove(imePaste.cut, path, transaction, move.from, move.to, move.text.length));
+    }
   }
 
   private readCurrent(file: TFile): Promise<null | string> {
@@ -490,6 +527,10 @@ function hasTouchedSource(operationPaths: readonly string[], rows: readonly Link
 /**
 A path is touched by a file operation on it, or on a folder that contains it.
 */
+function isCutTouched(operationPaths: readonly string[], cut: CutEvidence): boolean {
+  return isTouched(operationPaths, cut.path) || hasTouchedSource(operationPaths, cut.rows);
+}
+
 function isTouched(operationPaths: readonly string[], path: string): boolean {
   return operationPaths.some((operationPath) => path === operationPath || path.startsWith(`${operationPath}/`));
 }

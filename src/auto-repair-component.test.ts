@@ -401,6 +401,67 @@ describe('Automatic repairs', () => {
     component.unload();
   });
 
+  it.each([
+    ['in one commit', false],
+    ['with its final line break as a separate Enter', true]
+  ])('follows a heading cut into another note through a keyboard clipboard paste %s', async (_scenario, isSplit) => {
+    const { app, caches, component, notify, source, target } = await fixture();
+    const destination = await app.vault.create('Destination.md', '');
+    caches.set(destination.path, {});
+    const state = EditorState.create({ doc: '# Original\n' });
+    component.observe(target.path, state.update({ annotations: Transaction.userEvent.of('delete.cut'), changes: { from: 0, to: state.doc.length } }));
+    await app.vault.modify(target, '');
+    caches.set(target.path, {});
+    const first = EditorState.create({ doc: '' }).update({ annotations: Transaction.userEvent.of('input.type'), changes: { from: 0, insert: isSplit ? '# Original' : '# Original\n' } });
+    component.observe(destination.path, first);
+    if (isSplit) {
+      component.observe(destination.path, first.state.update({ annotations: Transaction.userEvent.of('input'), changes: { from: '# Original'.length, insert: '\n' } }));
+    }
+    await app.vault.modify(destination, '# Original\n');
+    caches.set(destination.path, heading('Original'));
+    app.metadataCache.trigger('resolved');
+    await vi.waitFor(() => {
+      expect(notify).toHaveBeenCalledOnce();
+    });
+    expect(await app.vault.read(source)).toBe('[[Destination#Original|Label]]\n');
+    component.unload();
+  });
+
+  it.each([
+    ['an edit in between', 'edit'],
+    ['a programmatic change in between', 'programmatic'],
+    ['a rename of the destination', 'rename'],
+    ['a rename of the cut note', 'renameCut'],
+    ['a typed character in place of the line break', 'typed'],
+    ['the line break in another note', 'elsewhere']
+  ])('drops the first half of a split keyboard clipboard paste after %s', async (_scenario, interruption) => {
+    const { app, caches, component, notify, target } = await fixture();
+    const destination = await app.vault.create('Destination.md', '');
+    caches.set(destination.path, {});
+    const state = EditorState.create({ doc: '# Original\n' });
+    component.observe(target.path, state.update({ annotations: Transaction.userEvent.of('delete.cut'), changes: { from: 0, to: state.doc.length } }));
+    await app.vault.modify(target, '');
+    caches.set(target.path, {});
+    const first = EditorState.create({ doc: '' }).update({ annotations: Transaction.userEvent.of('input.type'), changes: { from: 0, insert: '# Original' } });
+    component.observe(destination.path, first);
+    let { state: current } = first;
+    if (interruption === 'edit' || interruption === 'programmatic') {
+      const between = current.update({ annotations: interruption === 'edit' ? Transaction.userEvent.of('input.type') : [], changes: { from: 0, insert: 'x' } });
+      component.observe(destination.path, between);
+      current = between.state.update({ changes: { from: 0, to: 1 } }).state;
+    } else if (interruption === 'rename' || interruption === 'renameCut') {
+      app.vault.trigger('rename', castTo({ path: 'Moved.md' }), interruption === 'rename' ? destination.path : target.path);
+    }
+    const lineBreak = current.update({ annotations: Transaction.userEvent.of('input'), changes: { from: '# Original'.length, insert: interruption === 'typed' ? 'x' : '\n' } });
+    component.observe(interruption === 'elsewhere' ? 'Other.md' : destination.path, lineBreak);
+    await app.vault.modify(destination, '# Original\n');
+    caches.set(destination.path, heading('Original'));
+    app.metadataCache.trigger('resolved');
+    await settle();
+    expect(notify).not.toHaveBeenCalled();
+    component.unload();
+  });
+
   it('keeps a pending cut across a rename and a delete of unrelated files', async () => {
     const { app, caches, component, notify, source, target } = await fixture();
     const destination = await app.vault.create('Destination.md', '');

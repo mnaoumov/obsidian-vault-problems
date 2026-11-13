@@ -3,6 +3,11 @@ import type { Transaction } from '@codemirror/state';
 import { ensureNonNullable } from '@mnaoumov/typescript-lib/type-guards';
 
 /**
+A single typed character is never taken for an input-method paste, even when it equals the cut.
+*/
+const MINIMUM_INPUT_METHOD_PASTE_LENGTH = 2;
+
+/**
 A single cut deletion matched to one paste insertion.
 */
 export interface CutPaste {
@@ -59,15 +64,56 @@ export function detectHeadingEdit(before: string, after: string): HeadingEdit | 
 }
 
 /**
-Multi-range operations, copies and transformed clipboard content provide no unique move evidence.
+An Android keyboard's clipboard suggestion (Gboard's clipboard chip) commits the clipboard through the input method,
+not the WebView's Paste command, so CodeMirror sees `input.type` rather than `input.paste`. A cut that ends in a line
+break arrives in two transactions: the text without its final line break, then that line break as an Enter (`input`).
+This recognizes the first half; {@link matchSplitImePaste} completes it.
+*/
+export function isSplitImePasteStart(cut: Transaction, first: Transaction): boolean {
+  const deletion = cut.isUserEvent('delete.cut') ? singleChange(cut) : null;
+  const insertion = isImeCommit(first) ? singleChange(first) : null;
+  return !!deletion && !!insertion && !deletion.inserted && !insertion.text && deletion.text.length > 1 && deletion.text.endsWith('\n')
+    && insertion.inserted === deletion.text.slice(0, -1);
+}
+
+/**
+Multi-range operations, copies and transformed clipboard content provide no unique move evidence. The paste is either
+the WebView's Paste command (`input.paste`) or an input method committing the identical text in one go (`input.type`).
 */
 export function matchCutPaste(cut: Transaction, paste: Transaction): CutPaste | null {
-  if (!cut.isUserEvent('delete.cut') || !paste.isUserEvent('input.paste')) {
+  const isPaste = paste.isUserEvent('input.paste');
+  if (!cut.isUserEvent('delete.cut') || !(isPaste || isImeCommit(paste))) {
     return null;
   }
   const deletion = singleChange(cut);
   const insertion = singleChange(paste);
-  return !deletion || !insertion || deletion.inserted || insertion.text || !deletion.text || deletion.text !== insertion.inserted ? null : { from: deletion.from, text: deletion.text, to: insertion.to };
+  const minimumLength = isPaste ? 1 : MINIMUM_INPUT_METHOD_PASTE_LENGTH;
+  return !deletion || !insertion || deletion.inserted || insertion.text || deletion.text.length < minimumLength || deletion.text !== insertion.inserted
+    ? null
+    : { from: deletion.from, text: deletion.text, to: insertion.to };
+}
+
+/**
+Matches the two-transaction input-method paste described in {@link isSplitImePasteStart}: the line break must be the
+very next change, inserted exactly where the first half ended.
+*/
+export function matchSplitImePaste(cut: Transaction, first: Transaction, second: Transaction): CutPaste | null {
+  if (!isSplitImePasteStart(cut, first) || !second.isUserEvent('input') || second.isUserEvent('input.paste') || !second.startState.doc.eq(first.newDoc)) {
+    return null;
+  }
+  const deletion = ensureNonNullable(singleChange(cut));
+  const insertion = ensureNonNullable(singleChange(first));
+  const lineBreak = singleChange(second);
+  return !lineBreak || lineBreak.text || lineBreak.inserted !== '\n' || lineBreak.from !== insertion.to + insertion.inserted.length
+    ? null
+    : { from: deletion.from, text: deletion.text, to: insertion.to };
+}
+
+/**
+Typing composes (`input.type.compose`); an input method committing finished text, such as a clipboard suggestion, does not.
+*/
+function isImeCommit(transaction: Transaction): boolean {
+  return transaction.isUserEvent('input.type') && !transaction.isUserEvent('input.type.compose');
 }
 
 function readHeadingLine(line: string, next: string | undefined): HeadingLine | null {
