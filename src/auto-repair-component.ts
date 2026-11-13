@@ -192,12 +192,13 @@ export class AutoRepairComponent extends Component {
     this.registerEvent(this.params.app.metadataCache.on('changed', () => {
       this.schedule();
     }));
-    // A file operation invalidates editor evidence; its own handler owns link updates.
-    this.registerEvent(this.params.app.vault.on('rename', () => {
-      this.clear();
+    // A file operation invalidates the editor evidence it touches; its own handler owns link updates.
+    // An unrelated one, such as a sync or another plugin deleting some other note between a cut and its paste, does not.
+    this.registerEvent(this.params.app.vault.on('rename', (file, oldPath) => {
+      this.clearTouching([oldPath, file.path]);
     }));
-    this.registerEvent(this.params.app.vault.on('delete', () => {
-      this.clear();
+    this.registerEvent(this.params.app.vault.on('delete', (file) => {
+      this.clearTouching([file.path]);
     }));
   }
 
@@ -215,6 +216,13 @@ export class AutoRepairComponent extends Component {
   private clear(): void {
     this.cut = null;
     this.intents = [];
+  }
+
+  private clearTouching(operationPaths: readonly string[]): void {
+    if (this.cut && (isTouched(operationPaths, this.cut.path) || hasTouchedSource(operationPaths, this.cut.rows))) {
+      this.cut = null;
+    }
+    this.intents = this.intents.filter((intent) => !isTouched(operationPaths, intent.oldPath) && !isTouched(operationPaths, intent.newPath) && !hasTouchedSource(operationPaths, intent.rows));
   }
 
   private findIntent(link: string, source: TFile, intents: readonly RepairIntent[]): RepairIntent | undefined {
@@ -473,4 +481,15 @@ function countEndpoints(cache: CachedMetadata, subpath: string, content: string)
     return content.split('\n').filter((line) => line.trimEnd().endsWith(` ^${id}`) || line.trim() === `^${id}`).length;
   }
   return ensureNonNullable(cache.headings).filter((heading) => resolveSubpath({ ...cache, headings: [heading] }, subpath)?.type === 'heading').length;
+}
+
+function hasTouchedSource(operationPaths: readonly string[], rows: readonly LinkRow[]): boolean {
+  return rows.some((row) => isTouched(operationPaths, row.sourcePath));
+}
+
+/**
+A path is touched by a file operation on it, or on a folder that contains it.
+*/
+function isTouched(operationPaths: readonly string[], path: string): boolean {
+  return operationPaths.some((operationPath) => path === operationPath || path.startsWith(`${operationPath}/`));
 }
