@@ -1,9 +1,7 @@
 import type { App } from 'obsidian';
 
-import {
-  Component,
-  TFile
-} from 'obsidian';
+import { ComponentEx } from '@mnaoumov/obsidian-lib/components/component-ex';
+import { TFile } from 'obsidian';
 
 import type { LinkChange } from './link-model.ts';
 
@@ -20,7 +18,7 @@ export interface LinkEngineComponentConstructorParams {
 /**
 Owns subscriptions; file operations wait for the resolver to settle.
 */
-export class LinkEngineComponent extends Component {
+export class LinkEngineComponent extends ComponentEx {
   private active = false;
   private readonly app: App;
   private readonly engine: LinkEngine;
