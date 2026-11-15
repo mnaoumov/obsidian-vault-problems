@@ -3,8 +3,8 @@ import type {
   TFile
 } from 'obsidian';
 
+import { ComponentEx } from '@mnaoumov/obsidian-lib/components/component-ex';
 import { invokeAsyncSafely } from '@mnaoumov/typescript-lib/async';
-import { Component } from 'obsidian';
 
 import type { LinkEngine } from './link-engine.ts';
 
@@ -21,7 +21,7 @@ export interface SyntaxCheckComponentConstructorParams {
 /**
 Feeds the engine syntax problems: one read of every note at layout ready, then the text of each metadata change.
 */
-export class SyntaxCheckComponent extends Component {
+export class SyntaxCheckComponent extends ComponentEx {
   private active = false;
   private readonly app: App;
   private readonly changedDuringScan = new Set<string>();

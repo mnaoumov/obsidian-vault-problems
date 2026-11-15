@@ -1,7 +1,7 @@
 import type { App } from 'obsidian';
 
+import { ComponentEx } from '@mnaoumov/obsidian-lib/components/component-ex';
 import { watchPluginApi } from '@mnaoumov/obsidian-lib/plugin/plugin-api';
-import { Component } from 'obsidian';
 
 import type {
   AdvancedRenameAndDeleteHandlerApi,
@@ -32,7 +32,7 @@ after its handler queue and metadata parsing settle, including when the operatio
 an operation receives a replayed start, so the snapshot held from then on is partial, which is the best available.
 A batch still open when the provider goes away or this component unloads is closed, so the engine never stays deferred.
 */
-export class RenameHandlerBatchComponent extends Component {
+export class RenameHandlerBatchComponent extends ComponentEx {
   private readonly app: App;
   private endBatch: (() => void) | null = null;
   private readonly engine: LinkEngine;

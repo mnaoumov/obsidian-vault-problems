@@ -12,6 +12,7 @@ import type {
 } from 'obsidian';
 
 import { EditorView } from '@codemirror/view';
+import { ComponentEx } from '@mnaoumov/obsidian-lib/components/component-ex';
 import {
   editReferencesInContent,
   generateMarkdownLink,
@@ -26,7 +27,6 @@ import { castTo } from '@mnaoumov/typescript-lib/object-utils';
 import { ensureNonNullable } from '@mnaoumov/typescript-lib/type-guards';
 import { encodeUrl } from '@mnaoumov/typescript-lib/url';
 import {
-  Component,
   editorInfoField,
   parseLinktext,
   resolveSubpath
@@ -92,7 +92,7 @@ class RepairConflictError extends Error {}
 /**
 Observes actual editor operations, then validates metadata before changing any backlinks.
 */
-export class AutoRepairComponent extends Component {
+export class AutoRepairComponent extends ComponentEx {
   public readonly extension = EditorView.updateListener.of((update) => {
     // The host's CJS StateField is the same runtime value as CodeMirror's ESM field.
     const path = update.state.field(castTo<StateField<MarkdownFileInfo>>(editorInfoField), false)?.file?.path;

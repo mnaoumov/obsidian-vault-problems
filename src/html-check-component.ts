@@ -1,11 +1,11 @@
 import type { App } from 'obsidian';
 
+import { ComponentEx } from '@mnaoumov/obsidian-lib/components/component-ex';
 import { watchPluginApi } from '@mnaoumov/obsidian-lib/plugin/plugin-api';
 import {
   invokeAsyncSafely,
   sleep
 } from '@mnaoumov/typescript-lib/async';
-import { Component } from 'obsidian';
 
 import type { AdvancedMetadataCacheHtmlApi } from './advanced-metadata-cache.ts';
 import type { LinkEngine } from './link-engine.ts';
@@ -47,7 +47,7 @@ them through Obsidian's own sanitizer. One query per note at layout ready, then 
 provider is missing, or answers `null` because its opt-in `HTML` module is off, the status says the vault was not
 checked, so an empty list never reads as a clean vault.
 */
-export class HtmlCheckComponent extends Component {
+export class HtmlCheckComponent extends ComponentEx {
   /**
   A sentence for the Problems view while HTML is not fully checked, or `null` once it is.
   */
