@@ -10,12 +10,13 @@ import type { Plugin } from './plugin.ts';
 describe('Cut-and-paste repair', () => {
   it('follows heading and block targets through a real cut and paste into another note', async () => {
     const result = await evalInObsidian({
-      async callback({ app, lib: { waitUntil }, obsidianModule: { MarkdownView } }) {
+      async callback({ app, lib: { useInMemoryClipboard, waitUntil }, obsidianModule: { MarkdownView } }) {
         const root = 'automatic-move-repair';
         const timeoutInMilliseconds = 8000;
         const readyTimeoutInMilliseconds = 2500;
         const plugin = app.plugins.getPlugin('vault-problems') as Plugin;
-        const previousClipboard = window.electron.clipboard.readText();
+        // The test owns its clipboard: the system one is refused to the hidden harness window and is shared with the machine's user.
+        const clipboard = useInMemoryClipboard();
         const leaf = app.workspace.getLeaf(true);
         await app.vault.createFolder(root);
         try {
@@ -34,9 +35,19 @@ describe('Cut-and-paste repair', () => {
           leaf.view.editor.setSelection({ ch: 0, line: 0 }, leaf.view.editor.offsetToPos(cutText.length));
           window.electron.remote.getCurrentWebContents().focus();
           leaf.view.editor.focus();
-          // Native Edit > Cut drives a trusted clipboard event in the offscreen test window.
-          window.electron.remote.getCurrentWebContents().cut();
+          // A fixture ClipboardEvent drives Obsidian/CodeMirror's actual cut handler into a DataTransfer the test owns,
+          // so the cut never reaches the system clipboard. The handler records the cut and removes the selection.
+          const cutData = new DataTransfer();
+          const sourceContentElement = leaf.view.containerEl.querySelector<HTMLElement>('.cm-content');
+          if (!sourceContentElement) {
+            throw new Error('The source clipboard handler is not mounted.');
+          }
+          sourceContentElement.dispatchEvent(new ClipboardEvent('cut', { bubbles: true, cancelable: true, clipboardData: cutData }));
           await waitUntil({ message: 'cut removes the selected content', predicate: () => leaf.view instanceof MarkdownView && leaf.view.editor.getValue() === '', timeoutInMilliseconds: readyTimeoutInMilliseconds });
+          const cutClipboardText = cutData.getData('text/plain');
+          if (cutClipboardText.replaceAll('\r\n', '\n') !== cutText.replaceAll('\r\n', '\n')) {
+            throw new Error(`The cut handler put unexpected text on the clipboard: ${JSON.stringify(cutClipboardText)}`);
+          }
           await leaf.openFile(destination);
           await app.workspace.revealLeaf(leaf);
           if (!(leaf.view instanceof MarkdownView)) {
@@ -45,10 +56,10 @@ describe('Cut-and-paste repair', () => {
           window.electron.remote.getCurrentWebContents().focus();
           leaf.view.editor.focus();
           await waitUntil({ message: 'the destination editor holds focus for native Paste', predicate: () => leaf.view instanceof MarkdownView && leaf.view.editor.hasFocus(), timeoutInMilliseconds: readyTimeoutInMilliseconds });
-          // Native Paste delivers no data in the owned offscreen window. A fixture ClipboardEvent drives
-          // Obsidian/CodeMirror's actual paste handler; insertion and the resulting repair are both asserted.
+          // A fixture ClipboardEvent drives Obsidian/CodeMirror's actual paste handler with what the cut produced;
+          // insertion and the resulting repair are both asserted.
           const clipboardData = new DataTransfer();
-          clipboardData.setData('text/plain', cutText);
+          clipboardData.setData('text/plain', cutClipboardText);
           const contentElement = leaf.view.containerEl.querySelector<HTMLElement>('.cm-content');
           if (!contentElement) {
             throw new Error('The destination clipboard handler is not mounted.');
@@ -70,7 +81,7 @@ describe('Cut-and-paste repair', () => {
           }
           return await app.vault.read(source);
         } finally {
-          window.electron.clipboard.writeText(previousClipboard);
+          clipboard.restore();
           leaf.detach();
           const folder = app.vault.getFolderByPath(root);
           if (folder) {
