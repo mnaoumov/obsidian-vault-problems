@@ -117,6 +117,9 @@ export class ProblemFixes {
     if (problem.misplacedAttachment) {
       return this.getMisplacedAttachmentFixes(row.sourcePath, problem.misplacedAttachment);
     }
+    if (problem.missingCommunityPluginId !== undefined) {
+      return this.getCommunityPluginFixes(problem.missingCommunityPluginId);
+    }
     // An HTML candidate comes from a lexical index; deleting markup on its word could lose content.
     if (problem.html) {
       return [];
@@ -160,6 +163,37 @@ export class ProblemFixes {
       }
       await this.params.app.fileManager.trashFile(file);
     });
+  }
+
+  /**
+  Removes the id through Obsidian's own registry, which rewrites `community-plugins.json`; the file is never edited by
+  hand while Obsidian holds the list in memory.
+  */
+  private getCommunityPluginFixes(id: string): ProblemFix[] {
+    const { plugins } = this.params.app;
+    if (!isMissingCommunityPlugin(this.params.app, id)) {
+      return [];
+    }
+    return [{
+      label: `Remove ${id} from the enabled community plugins`,
+      run: async (): Promise<void> => {
+        // Re-check at click time: the plugin may have been installed, or the id removed, since the menu opened.
+        if (!isMissingCommunityPlugin(this.params.app, id)) {
+          throw new Error('The enabled community plugins changed since the problem was found. Open quick fixes again.');
+        }
+        await plugins.disablePluginAndSave(id);
+        // `disablePluginAndSave` saves on a debounce; write the list now, so the fix is on disk when it reports done.
+        await plugins.saveConfig();
+        this.params.notify(`Removed ${id} from the enabled community plugins`, async () => {
+          if (plugins.enabledPlugins.has(id) || Object.hasOwn(plugins.manifests, id)) {
+            throw new Error(`Cannot undo: ${id} has been enabled or installed since.`);
+          }
+          plugins.enabledPlugins.add(id);
+          await plugins.saveConfig();
+          plugins.trigger('changed');
+        });
+      }
+    }];
   }
 
   private async getFileFixes(problem: LinkProblem, subpath: string): Promise<ProblemFix[]> {
@@ -398,6 +432,10 @@ function getParentPath(path: string): string {
 
 function isMatchingReference(row: LinkRow, reference: Reference): boolean {
   return row.kind !== 'reference' && row.link === reference.link && (isReferenceCache(reference) ? row.position?.start.offset === reference.position.start.offset : 'key' in reference && row.key === reference.key);
+}
+
+function isMissingCommunityPlugin(app: App, id: string): boolean {
+  return app.plugins.enabledPlugins.has(id) && !Object.hasOwn(app.plugins.manifests, id);
 }
 
 function missingPath(row: LinkRow): null | string {

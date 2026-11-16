@@ -47,6 +47,11 @@ export interface LinkProblem {
   */
   readonly misplacedAttachment?: MisplacedAttachment;
   /**
+  Present only on a community-plugin problem: the id that is enabled but has no installed plugin. Its row is keyed by the
+  config file that lists the id, and has no position.
+  */
+  readonly missingCommunityPluginId?: string;
+  /**
   Present only on a path problem, whose row names the file or folder and has no position.
   */
   readonly pathViolation?: PathCompatibilityViolation;
@@ -64,7 +69,7 @@ One metadata reference and its current resolution.
 export interface LinkRow {
   readonly id: string;
   readonly key: null | string;
-  readonly kind: 'embed' | 'frontmatter' | 'html' | 'link' | 'misplaced-attachment' | 'path' | 'reference' | 'syntax';
+  readonly kind: 'community-plugin' | 'embed' | 'frontmatter' | 'html' | 'link' | 'misplaced-attachment' | 'path' | 'reference' | 'syntax';
   readonly link: string;
   /**
   Frontmatter metadata supplies a key rather than an exact text range.

@@ -124,6 +124,15 @@ describe('Problems panel', () => {
     plugin.unload();
   });
 
+  it('names the location of a community-plugin problem as the plugin id', async () => {
+    const { plugin, problem, problems, view } = await fixture();
+    problems.splice(0, problems.length, { ...problem, message: 'gone is enabled but not installed', missingCommunityPluginId: 'gone', row: { ...problem.row, key: 'gone', kind: 'community-plugin', link: 'gone', position: null } });
+    view.render();
+    expect(view.contentEl.textContent).toContain('Plugin gone: gone is enabled but not installed');
+    expect(view.contentEl.querySelector('.vault-problems-severity.is-warning')?.textContent).toBe('Warning');
+    plugin.unload();
+  });
+
   it('navigates to a source range and safely ignores a removed source', async () => {
     const { app, file, plugin, view } = await fixture();
     const leaf = app.workspace.getLeaf(false);

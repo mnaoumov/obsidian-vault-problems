@@ -44,6 +44,7 @@ A copy of the vault ships with every release. You can access it via any of the f
 5. **Syntax checks.** Frontmatter that does not parse or swallowed its properties, an unclosed link destination, code span or `%%` comment. See [Syntax checks](<./demo-vault/04 Syntax checks.md>).
 6. **HTML problems.** Tags that Obsidian's sanitizer changes or removes, with `Advanced Metadata Cache` installed. See [HTML problems](<./demo-vault/05 HTML problems.md>).
 7. **Path and attachment checks.** A file or folder name that a platform the vault syncs to cannot store, and a link to an attachment kept outside the note's attachment folder. See [Path and attachment checks](#path-and-attachment-checks).
+8. **Community plugin check.** A community plugin id that is enabled but not installed, which Obsidian skips silently. See [Community plugin check](#community-plugin-check).
 
 ## Problems view
 
@@ -83,6 +84,12 @@ There is no quick fix: a tag is found by a lexical scan, so an unusual Markdown 
 2. **Misplaced attachments.** A link or embed to an attachment that sits outside the attachment folder the linking note is configured to use, including folders that `Custom Attachment Location` sets. The **Misplaced attachments** setting reports every such link, only links to an attachment that no linking note holds in its own folder, or none. These rows are **Warning** rows, because the link still works. The quick fix moves the attachment into the right folder.
 
 Both quick fixes offer **Undo**, which moves the file back.
+
+## Community plugin check
+
+Obsidian loads the community plugins listed in `community-plugins.json` in the vault's config folder (`.obsidian` by default). An id listed there with no installed plugin is skipped at startup with no notice, so the plugin never loads and nothing says why. Such an id is often left over after a plugin changed its id, or after its folder was deleted by hand.
+
+Each such id is a **Warning** row under the **community-plugin** kind, grouped under that file, because it can also be a plugin that has not finished syncing to this device yet. The check runs when the layout is ready and again whenever a plugin is installed, enabled, disabled or uninstalled. The quick fix removes the id from the enabled list through Obsidian's own plugin manager, which rewrites the file; **Undo** puts it back.
 
 ## See also
 

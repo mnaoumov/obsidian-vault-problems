@@ -25,6 +25,7 @@ import type { LinkProblem } from './link-model.ts';
 import type { PathRepairScope } from './problem-fixes.ts';
 
 import { AutoRepairComponent } from './auto-repair-component.ts';
+import { CommunityPluginComponent } from './community-plugin-component.ts';
 import { EditorProblems } from './editor-problems.ts';
 import { HtmlCheckComponent } from './html-check-component.ts';
 import { LinkEngineComponent } from './link-engine-component.ts';
@@ -177,6 +178,7 @@ export class Plugin extends PluginBase {
     this.pathCompatibilityComponent = this.addChild(
       new PathCompatibilityComponent({ app: this.app, engine: this.linkEngine, getScope: (): PathRepairScope => this.getPathRepairScope() })
     );
+    this.addChild(new CommunityPluginComponent({ app: this.app, engine: this.linkEngine }));
     this.misplacedAttachmentComponent = this.addChild(
       new MisplacedAttachmentComponent({ app: this.app, engine: this.linkEngine, getMode: (): ExternalAttachmentLinkMode => this.externalAttachmentLinkMode })
     );
