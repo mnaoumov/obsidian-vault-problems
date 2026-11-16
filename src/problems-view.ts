@@ -10,12 +10,16 @@ import {
   setIcon
 } from 'obsidian';
 
-import type { LinkProblem } from './link-model.ts';
+import type {
+  LinkProblem,
+  LinkRow
+} from './link-model.ts';
 import type { Plugin } from './plugin.ts';
 import type { ProblemGrouping } from './problem-filter.ts';
 
 import {
   groupProblems,
+  isWarningProblem,
   PROBLEM_KIND_LABELS
 } from './problem-filter.ts';
 
@@ -78,7 +82,7 @@ export class ProblemsView extends ItemView {
     this.contentEl.addClass('vault-problems-view');
     const controls = this.contentEl.createDiv({ cls: 'vault-problems-filters' });
     const kind = controls.createEl('select', { attr: { 'aria-label': 'Problem kind' } });
-    for (const value of ['', 'link', 'embed', 'frontmatter', 'reference', 'syntax', 'html']) {
+    for (const value of ['', 'link', 'embed', 'frontmatter', 'reference', 'syntax', 'html', 'misplaced-attachment', 'path']) {
       kind.createEl('option', { text: value || 'All kinds', value });
     }
     kind.value = this.kind;
@@ -157,6 +161,7 @@ export class ProblemsView extends ItemView {
   private async openProblem(problem: LinkProblem): Promise<void> {
     const file = this.app.vault.getFileByPath(problem.row.sourcePath);
     if (!file) {
+      // A folder's name problem has nothing to open; its quick fixes are on the row.
       return;
     }
     const leaf = this.app.workspace.getLeaf(false);
@@ -204,11 +209,11 @@ export class ProblemsView extends ItemView {
 
   private renderProblem(parent: HTMLElement, problem: LinkProblem): void {
     const row = parent.createDiv({ cls: 'vault-problems-row' });
-    const line = problem.row.position ? `Line ${String(problem.row.position.start.line + 1)}` : `Property ${problem.row.key ?? ''}`;
+    const line = describeLocation(problem.row);
     // Grouped by kind, the heading no longer names the note, so each row does.
     const location = this.grouping === 'kind' ? `${problem.row.sourcePath}, ${line}` : line;
     // An HTML finding is a candidate from a lexical index, so it is reviewed rather than asserted.
-    row.createSpan({ cls: problem.html ? 'vault-problems-severity is-warning' : 'vault-problems-severity', text: problem.html ? 'Warning' : 'Error' });
+    row.createSpan({ cls: isWarningProblem(problem) ? 'vault-problems-severity is-warning' : 'vault-problems-severity', text: isWarningProblem(problem) ? 'Warning' : 'Error' });
     const open = row.createEl('button', { cls: 'vault-problems-open', text: `${location}: ${problem.message}` });
     this.rows.registerDomEvent(open, 'click', () => {
       invokeAsyncSafely(() => this.openProblem(problem));
@@ -262,4 +267,14 @@ export class ProblemsView extends ItemView {
       this.render();
     });
   }
+}
+
+/**
+Where in its file a problem sits: a line, a frontmatter property, or the file or folder name itself.
+*/
+function describeLocation(row: LinkRow): string {
+  if (row.position) {
+    return `Line ${String(row.position.start.line + 1)}`;
+  }
+  return row.kind === 'path' ? 'Name' : `Property ${row.key ?? ''}`;
 }

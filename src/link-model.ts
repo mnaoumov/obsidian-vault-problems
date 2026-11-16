@@ -1,3 +1,4 @@
+import type { PathCompatibilityViolation } from '@mnaoumov/obsidian-lib/path-compatibility';
 import type { Pos } from 'obsidian';
 
 import type { HtmlDiagnostic } from './advanced-metadata-cache.ts';
@@ -41,6 +42,14 @@ export interface LinkProblem {
   */
   readonly html?: HtmlDiagnostic;
   readonly message: string;
+  /**
+  Present only on a misplaced-attachment problem, whose row is the reference that reaches the attachment.
+  */
+  readonly misplacedAttachment?: MisplacedAttachment;
+  /**
+  Present only on a path problem, whose row names the file or folder and has no position.
+  */
+  readonly pathViolation?: PathCompatibilityViolation;
   readonly row: LinkRow;
   readonly status: 'new' | 'standing';
   /**
@@ -55,7 +64,7 @@ One metadata reference and its current resolution.
 export interface LinkRow {
   readonly id: string;
   readonly key: null | string;
-  readonly kind: 'embed' | 'frontmatter' | 'html' | 'link' | 'reference' | 'syntax';
+  readonly kind: 'embed' | 'frontmatter' | 'html' | 'link' | 'misplaced-attachment' | 'path' | 'reference' | 'syntax';
   readonly link: string;
   /**
   Frontmatter metadata supplies a key rather than an exact text range.
@@ -76,4 +85,18 @@ export interface LinkTarget {
   readonly kind: 'block' | 'file' | 'heading';
   readonly path: string;
   readonly subpath: string;
+}
+
+/**
+A reference to an attachment outside the attachment folder of the note that makes it.
+*/
+export interface MisplacedAttachment {
+  /**
+  The attachment's current vault-relative path.
+  */
+  readonly attachmentPath: string;
+  /**
+  The folder the referencing note's configuration puts the attachment in, `/` for the vault root.
+  */
+  readonly properAttachmentFolderPath: string;
 }

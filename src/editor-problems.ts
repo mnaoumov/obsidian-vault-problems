@@ -19,6 +19,8 @@ import type {
   LinkRow
 } from './link-model.ts';
 
+import { isWarningProblem } from './problem-filter.ts';
+
 export interface RangedLinkProblem extends LinkProblem {
   readonly row: RangedLinkRow;
 }
@@ -73,7 +75,7 @@ export class EditorProblems {
             return problem.row.sourcePath === projection.path && position !== null && position.start.offset >= 0 && position.end.offset > position.start.offset && position.end.offset <= view.state.doc.length;
           })
           : [];
-        projection.decorations = Decoration.set(projection.problems.map((problem) => Decoration.mark({ class: problem.html ? 'vault-problems-underline is-warning' : 'vault-problems-underline' }).range(problem.row.position.start.offset, problem.row.position.end.offset)), true);
+        projection.decorations = Decoration.set(projection.problems.map((problem) => Decoration.mark({ class: isWarningProblem(problem) ? 'vault-problems-underline is-warning' : 'vault-problems-underline' }).range(problem.row.position.start.offset, problem.row.position.end.offset)), true);
       }
       const unsubscribe = params.subscribe((path) => {
         if (path !== undefined && path !== params.getPath(view.state)) {

@@ -1,3 +1,4 @@
+import type { PathCompatibilityViolation } from '@mnaoumov/obsidian-lib/path-compatibility';
 import type { AsyncEventRef } from '@mnaoumov/typescript-lib/async-events';
 import type {
   App,
@@ -5,8 +6,15 @@ import type {
   Pos
 } from 'obsidian';
 
+import {
+  PATH_COMPATIBILITY_PLATFORM_LABELS,
+  PathCompatibilityViolationType
+} from '@mnaoumov/obsidian-lib/path-compatibility';
 import { AsyncEventsBase } from '@mnaoumov/typescript-lib/async-events';
-import { ensureNonNullable } from '@mnaoumov/typescript-lib/type-guards';
+import {
+  assertNever,
+  ensureNonNullable
+} from '@mnaoumov/typescript-lib/type-guards';
 import {
   parseLinktext,
   resolveSubpath
@@ -19,7 +27,8 @@ import type {
   LinkEngineEventMap,
   LinkProblem,
   LinkRow,
-  LinkTarget
+  LinkTarget,
+  MisplacedAttachment
 } from './link-model.ts';
 import type { SyntaxIssue } from './syntax-checks.ts';
 
@@ -34,6 +43,14 @@ Collaborators for a metadata-backed link engine.
 export interface LinkEngineConstructorParams {
   readonly app: App;
   readonly notify: (problems: readonly LinkProblem[]) => void;
+}
+
+/**
+One misplaced reference: the engine row that reaches the attachment, and where the attachment belongs.
+*/
+export interface MisplacedAttachmentEntry {
+  readonly misplacedAttachment: MisplacedAttachment;
+  readonly row: LinkRow;
 }
 
 interface LinkReference {
@@ -51,8 +68,10 @@ export class LinkEngine extends AsyncEventsBase<LinkEngineEventMap> {
   private batchDepth = 0;
   private readonly htmlProblems = new Map<string, readonly LinkProblem[]>();
   private initialized = false;
+  private readonly misplacedProblems = new Map<string, readonly LinkProblem[]>();
   private readonly names = new Map<string, Set<string>>();
   private readonly notify: (problems: readonly LinkProblem[]) => void;
+  private readonly pathProblems = new Map<string, readonly LinkProblem[]>();
   private readonly pending: LinkChange[] = [];
   private readonly problems = new Map<string, readonly LinkProblem[]>();
   private readonly rows = new Map<string, readonly LinkRow[]>();
@@ -98,17 +117,34 @@ export class LinkEngine extends AsyncEventsBase<LinkEngineEventMap> {
   }
 
   /**
-  All current problems, without another vault scan.
+  Drops every misplaced-attachment problem, when the check is turned off.
   */
-  public getAllProblems(): readonly LinkProblem[] {
-    return [...this.problems.values(), ...this.syntaxProblems.values(), ...this.htmlProblems.values()].flat();
+  public clearMisplacedAttachments(): void {
+    this.clearStore(this.misplacedProblems, () => true);
   }
 
   /**
-  Current problems for a note: link problems in metadata order, then syntax and HTML problems in source order.
+  Drops the path problems of a path and of everything under it, after a delete or before a rename is checked again.
+
+  @param path - The file or folder path, or `null` for every path.
+  */
+  public clearPathViolations(path: null | string): void {
+    this.clearStore(this.pathProblems, (key) => path === null || key === path || key.startsWith(`${path}/`));
+  }
+
+  /**
+  All current problems, without another vault scan.
+  */
+  public getAllProblems(): readonly LinkProblem[] {
+    return [...this.problems.values(), ...this.getTextStores().flatMap((store) => [...store.values()])].flat();
+  }
+
+  /**
+  Current problems for a path: link problems in metadata order, then syntax and HTML problems in source order, then
+  misplaced attachments and the path's own name.
   */
   public getProblems(sourcePath: string): readonly LinkProblem[] {
-    return [...this.getLinkProblems(sourcePath), ...this.syntaxProblems.get(sourcePath) ?? [], ...this.htmlProblems.get(sourcePath) ?? []];
+    return [...this.getLinkProblems(sourcePath), ...this.getTextStores().flatMap((store) => store.get(sourcePath) ?? [])];
   }
 
   /**
@@ -179,6 +215,49 @@ export class LinkEngine extends AsyncEventsBase<LinkEngineEventMap> {
         status: 'standing'
       }));
     this.replaceNoteProblems(this.htmlProblems, sourcePath, problems, (problem) => problem.html);
+  }
+
+  /**
+  Replaces a note's misplaced-attachment problems, one per reference, and publishes the change when it differs.
+
+  @param sourcePath - The referencing note.
+  @param entries - Each reference's row and the folder its attachment belongs in.
+  */
+  public setMisplacedAttachments(sourcePath: string, entries: readonly MisplacedAttachmentEntry[]): void {
+    const problems = entries.map(({ misplacedAttachment, row }): LinkProblem => ({
+      cause: null,
+      message: `${misplacedAttachment.attachmentPath} is outside this note's attachment folder ${misplacedAttachment.properAttachmentFolderPath}`,
+      misplacedAttachment,
+      row: { ...row, id: `misplaced-attachment:${row.id}`, kind: 'misplaced-attachment' },
+      status: 'standing'
+    }));
+    this.replaceNoteProblems(this.misplacedProblems, sourcePath, problems, (problem) => [problem.row.id, problem.misplacedAttachment]);
+  }
+
+  /**
+  Replaces the path problems of one file or folder name, and publishes the change when it differs.
+
+  @param path - The file or folder path.
+  @param violations - What the enabled platforms object to in it.
+  */
+  public setPathViolations(path: string, violations: readonly PathCompatibilityViolation[]): void {
+    const problems = violations.map((violation): LinkProblem => ({
+      cause: null,
+      message: describePathViolation(violation),
+      pathViolation: violation,
+      row: {
+        id: `path:${violation.type}:${violation.platform ?? ''}`,
+        key: null,
+        kind: 'path',
+        link: path,
+        position: null,
+        sourcePath: path,
+        target: null,
+        targetPath: null
+      },
+      status: 'standing'
+    }));
+    this.replaceNoteProblems(this.pathProblems, path, problems, (problem) => problem.pathViolation);
   }
 
   /**
@@ -269,7 +348,7 @@ export class LinkEngine extends AsyncEventsBase<LinkEngineEventMap> {
       this.problems.delete(change.oldPath);
       this.rows.set(change.path, oldRows);
       this.problems.set(change.path, oldProblems);
-      for (const store of [this.syntaxProblems, this.htmlProblems]) {
+      for (const store of [this.syntaxProblems, this.htmlProblems, this.misplacedProblems]) {
         const oldNoteProblems = store.get(change.oldPath);
         store.delete(change.oldPath);
         if (oldNoteProblems) {
@@ -282,8 +361,23 @@ export class LinkEngine extends AsyncEventsBase<LinkEngineEventMap> {
     this.recompute([...affected], cause);
   }
 
+  private clearStore(store: Map<string, readonly LinkProblem[]>, isCleared: (path: string) => boolean): void {
+    const sourcePaths = [...store.keys()].filter((path) => isCleared(path));
+    if (sourcePaths.length === 0) {
+      return;
+    }
+    for (const path of sourcePaths) {
+      store.delete(path);
+    }
+    this.trigger('changed', { newProblems: [], sourcePaths } satisfies LinkEngineChange);
+  }
+
   private getLinkProblems(sourcePath: string): readonly LinkProblem[] {
     return this.problems.get(sourcePath) ?? [];
+  }
+
+  private getTextStores(): readonly Map<string, readonly LinkProblem[]>[] {
+    return [this.syntaxProblems, this.htmlProblems, this.misplacedProblems, this.pathProblems];
   }
 
   private readRows(sourcePath: string, cache: CachedMetadata): LinkRow[] {
@@ -380,6 +474,7 @@ export class LinkEngine extends AsyncEventsBase<LinkEngineEventMap> {
         this.problems.delete(path);
         this.syntaxProblems.delete(path);
         this.htmlProblems.delete(path);
+        this.misplacedProblems.delete(path);
       }
     }
     this.trigger('changed', { newProblems, sourcePaths: paths } satisfies LinkEngineChange);
@@ -407,7 +502,7 @@ export class LinkEngine extends AsyncEventsBase<LinkEngineEventMap> {
     problems: readonly LinkProblem[],
     getDetail: (problem: LinkProblem) => unknown
   ): void {
-    if (!this.app.vault.getFileByPath(sourcePath)) {
+    if (!this.app.vault.getAbstractFileByPath(sourcePath)) {
       return;
     }
     const previous = store.get(sourcePath) ?? [];
@@ -447,6 +542,42 @@ function describeHtmlDiagnostic(diagnostic: HtmlDiagnostic): string {
   return diagnostic.kind === 'unknown'
     ? `Unknown HTML tag ${html}: Obsidian renders it as an element no browser knows`
     : `Obsidian's sanitizer changes or removes ${html} when it renders this note`;
+}
+
+/**
+Names what one platform, or Obsidian, objects to in a name, with the numbers a reader can check.
+*/
+function describePathViolation(violation: PathCompatibilityViolation): string {
+  const owner = violation.platform === null ? 'Obsidian' : PATH_COMPATIBILITY_PLATFORM_LABELS[violation.platform];
+  const characters = (violation.characters ?? []).map((character) => JSON.stringify(character)).join(' ');
+  const measurement = violation.measurement;
+  const length = measurement ? `: ${String(measurement.length)} of at most ${String(measurement.limit)} ${measurement.isInBytes ? 'bytes' : 'characters'}` : '';
+  switch (violation.type) {
+    case PathCompatibilityViolationType.ForbiddenCharacter: {
+      return `${owner} cannot store a name holding ${characters}`;
+    }
+    case PathCompatibilityViolationType.NameTooLong: {
+      return `${owner} cannot store a name this long${length}`;
+    }
+    case PathCompatibilityViolationType.ObsidianForbiddenCharacter: {
+      return `Obsidian links do not work with a name holding ${characters}`;
+    }
+    case PathCompatibilityViolationType.PathTooLong: {
+      return `${owner} cannot store a path this long, counting the vault root${length}`;
+    }
+    case PathCompatibilityViolationType.ReservedName: {
+      return `${owner} reserves this name for a device`;
+    }
+    case PathCompatibilityViolationType.TrailingCharacter: {
+      return `${owner} cannot store a name ending in a dot or a space`;
+    }
+    case PathCompatibilityViolationType.UnicodeNotNormalized: {
+      return 'The name is not stored in Unicode NFC, so tools outside Obsidian see a different name';
+    }
+    default: {
+      return assertNever(violation.type);
+    }
+  }
 }
 
 function nameKey(path: string): string {

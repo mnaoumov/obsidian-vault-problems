@@ -18,12 +18,14 @@ export type ProblemGrouping = 'file' | 'kind';
 How each row kind is named as a group heading.
 */
 export const PROBLEM_KIND_LABELS: Readonly<Record<LinkProblem['row']['kind'], string>> = {
-  embed: 'Embeds',
-  frontmatter: 'Frontmatter links',
-  html: 'HTML',
-  link: 'Links',
-  reference: 'Reference links',
-  syntax: 'Syntax'
+  'embed': 'Embeds',
+  'frontmatter': 'Frontmatter links',
+  'html': 'HTML',
+  'link': 'Links',
+  'misplaced-attachment': 'Misplaced attachments',
+  'path': 'Path compatibility',
+  'reference': 'Reference links',
+  'syntax': 'Syntax'
 };
 
 /**
@@ -88,4 +90,12 @@ export function isIgnoredPath(path: string, patterns: readonly string[]): boolea
     }).join('');
     return new RegExp(`^(?:${expression})(?:/.*)?$`, 'u').test(path);
   });
+}
+
+/**
+Whether a problem is a candidate to review rather than a break: an HTML finding comes from a lexical index, and a
+misplaced attachment still resolves.
+*/
+export function isWarningProblem(problem: LinkProblem): boolean {
+  return Boolean(problem.html ?? problem.misplacedAttachment);
 }

@@ -1,5 +1,7 @@
 import type { PluginManifest } from 'obsidian';
 
+import { ExternalAttachmentLinkMode } from '@mnaoumov/obsidian-lib/misplaced-attachment';
+import { PathCompatibilityPlatform } from '@mnaoumov/obsidian-lib/path-compatibility';
 import { App } from 'obsidian-test-mocks/obsidian';
 import {
   describe,
@@ -23,7 +25,7 @@ describe('Repair preference', () => {
     app.metadataCache.trigger('resolved');
     const tab = new RepairSettingTab(app, plugin);
     expect(tab.getControlValue()).toBe(false);
-    expect(tab.getSettingDefinitions()).toMatchObject([{ control: { defaultValue: true, key: 'isAutoRepairEnabled', type: 'toggle' }, name: 'Automatically repair links' }, { control: { defaultValue: '', key: 'ignoredPaths', type: 'textarea' } }]);
+    expect(tab.getSettingDefinitions().slice(0, 2)).toMatchObject([{ control: { defaultValue: true, key: 'isAutoRepairEnabled', type: 'toggle' }, name: 'Automatically repair links' }, { control: { defaultValue: '', key: 'ignoredPaths', type: 'textarea' } }]);
     await tab.setControlValue('isAutoRepairEnabled', true);
     expect(tab.getControlValue()).toBe(true);
     expect(save).toHaveBeenCalledWith({ isAutoRepairEnabled: true, other: 'kept' });
@@ -32,6 +34,35 @@ describe('Repair preference', () => {
     expect(save).toHaveBeenCalledWith({ ignoredPaths: ['Folder/**', 'Archive'], isAutoRepairEnabled: false, other: 'kept' });
     await expect(tab.setControlValue('ignoredPaths', 42)).rejects.toThrow('must be a boolean');
     await expect(tab.setControlValue('isAutoRepairEnabled', 'invalid')).rejects.toThrow('must be a boolean');
+    plugin.unload();
+  });
+
+  it('saves and validates the path and misplaced-attachment settings', async () => {
+    const app = App.createConfigured__().asOriginalType__();
+    const plugin = new Plugin(app, manifest);
+    vi.spyOn(plugin, 'loadData').mockResolvedValue({ externalAttachmentLinkMode: 'ReportUnowned', forbiddenCharacterReplacement: '_', maxVaultRootPathLength: 40, pathCompatibilityPlatforms: ['Linux', 'Unknown'] });
+    const save = vi.spyOn(plugin, 'saveData').mockResolvedValue();
+    await plugin.onload();
+    const tab = new RepairSettingTab(app, plugin);
+    expect(tab.getControlValue('externalAttachmentLinkMode')).toBe(ExternalAttachmentLinkMode.ReportUnowned);
+    expect(tab.getControlValue('forbiddenCharacterReplacement')).toBe('_');
+    expect(tab.getControlValue('maxVaultRootPathLength')).toBe(40);
+    expect(tab.getControlValue('pathCompatibility:Linux')).toBe(true);
+    expect(tab.getControlValue('pathCompatibility:Windows')).toBe(false);
+    expect(plugin.getPathRepairScope()).toEqual({ forbiddenCharacterReplacement: '_', maxVaultRootPathLength: 40, platforms: [PathCompatibilityPlatform.Linux] });
+    await tab.setControlValue('pathCompatibility:Windows', true);
+    expect(plugin.pathCompatibilityPlatforms).toContain(PathCompatibilityPlatform.Windows);
+    await tab.setControlValue('forbiddenCharacterReplacement', '');
+    await expect(tab.setControlValue('forbiddenCharacterReplacement', ':')).rejects.toThrow();
+    await tab.setControlValue('maxVaultRootPathLength', 0);
+    expect(plugin.getPathRepairScope().maxVaultRootPathLength).toBeGreaterThanOrEqual(0);
+    await expect(tab.setControlValue('maxVaultRootPathLength', -1)).rejects.toThrow('whole number');
+    await tab.setControlValue('externalAttachmentLinkMode', ExternalAttachmentLinkMode.Ignore);
+    await expect(tab.setControlValue('externalAttachmentLinkMode', 'Other')).rejects.toThrow('listed modes');
+    // The mocked loadData returns the original data each time, so every save carries it plus the one changed value.
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ forbiddenCharacterReplacement: '' }));
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ maxVaultRootPathLength: 0 }));
+    expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ externalAttachmentLinkMode: ExternalAttachmentLinkMode.Ignore, forbiddenCharacterReplacement: '_' }));
     plugin.unload();
   });
 

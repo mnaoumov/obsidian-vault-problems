@@ -43,6 +43,7 @@ A copy of the vault ships with every release. You can access it via any of the f
 4. **Editor problems.** The same problems underlined where they are, with the same quick fixes on hover and at the cursor.
 5. **Syntax checks.** Frontmatter that does not parse or swallowed its properties, an unclosed link destination, code span or `%%` comment. See [Syntax checks](<./demo-vault/04 Syntax checks.md>).
 6. **HTML problems.** Tags that Obsidian's sanitizer changes or removes, with `Advanced Metadata Cache` installed. See [HTML problems](<./demo-vault/05 HTML problems.md>).
+7. **Path and attachment checks.** A file or folder name that a platform the vault syncs to cannot store, and a link to an attachment kept outside the note's attachment folder. See [Path and attachment checks](#path-and-attachment-checks).
 
 ## Problems view
 
@@ -76,6 +77,13 @@ They come from the shared HTML index of [`Advanced Metadata Cache`](https://gith
 
 There is no quick fix: a tag is found by a lexical scan, so an unusual Markdown construct can produce a false candidate, and deleting markup on one could lose content.
 
+## Path and attachment checks
+
+1. **Path compatibility.** Every file and folder name is checked against the naming rules of the platforms you turn on in settings: forbidden characters, reserved names, trailing dots and spaces, and name and path lengths, counted with the **Longest vault folder path** you give. Only the platform you are running on is on by default. The quick fix renames the file or folder to a name every enabled platform accepts, putting the **Forbidden character replacement** in place of each forbidden character. Obsidian updates the links to it.
+2. **Misplaced attachments.** A link or embed to an attachment that sits outside the attachment folder the linking note is configured to use, including folders that `Custom Attachment Location` sets. The **Misplaced attachments** setting reports every such link, only links to an attachment that no linking note holds in its own folder, or none. These rows are **Warning** rows, because the link still works. The quick fix moves the attachment into the right folder.
+
+Both quick fixes offer **Undo**, which moves the file back.
+
 ## See also
 
 [My other Obsidian resources](https://mnaoumov.dev/obsidian/)
@@ -84,7 +92,7 @@ There is no quick fix: a tag is found by a lexical scan, so an unusual Markdown 
 | --- | --- | --- |
 | [`Broken Links`](https://community.obsidian.md/plugins/broken-links) | Lists links to notes that do not exist | Same goal as `Broken Links`; adds headings, blocks, embeds, frontmatter and reference links; ties each break to its cause; quick fixes |
 | [`Cairn Vault Linter`](https://community.obsidian.md/plugins/cairn-vault-linter) | Offline vault health report: broken links, duplicate references, block ids, dangling stubs | Same goal as `Cairn Vault Linter`; live instead of a report; repairs unambiguous breaks; quick fixes |
-| [`Consistent Attachments and Links`](https://community.obsidian.md/plugins/consistent-attachments-and-links) (maintained by me) | Moves attachments with notes; batch consistency check; broken-links view | Covers part of `Consistent Attachments and Links`: its broken-link candidates, from the same shared finder; adds a live list, editor underlines, heading and block repairs, syntax checks |
+| [`Consistent Attachments and Links`](https://community.obsidian.md/plugins/consistent-attachments-and-links) (maintained by me) | Moves attachments with notes; batch consistency check; broken-links view | Covers every category of its consistency report live (broken links, path compatibility, misplaced attachments), from the same shared library, except the Unicode-normalization check, which needs the on-disk name; adds editor underlines, heading and block repairs, syntax checks |
 | [`Dangling links`](https://community.obsidian.md/plugins/obsidian-dangling-links) | Sidebar of links that point at nothing | Same goal as `Dangling links`; adds headings, blocks and frontmatter; the cause of each break; quick fixes; automatic repairs |
 | [`Dangling links with replace`](https://community.obsidian.md/plugins/dangling-links-with-replace) | Lists dangling links in the vault and replaces them | Same goal as `Dangling links with replace`; adds headings, blocks and frontmatter, the cause of each break, automatic repairs and editor underlines |
 | [`Find orphaned files and broken links`](https://community.obsidian.md/plugins/find-unlinked-files) | Lists files with no backlinks and links to missing files, on demand | Same goal as `Find orphaned files and broken links` for broken links; live instead of on demand; adds headings, blocks, causes and repairs; omits orphaned files |
