@@ -29,6 +29,7 @@ import type {
   HtmlDiagnostic
 } from './advanced-metadata-cache.ts';
 import type { LinkProblem } from './link-model.ts';
+import type { PathRepairScope } from './problem-fixes.ts';
 
 import { ADVANCED_METADATA_CACHE_PLUGIN_ID } from './advanced-metadata-cache.ts';
 import { HtmlCheckComponent } from './html-check-component.ts';
@@ -186,7 +187,7 @@ describe('ProblemFixes HTML problems', () => {
   it('offers no fix, because a lexical candidate never justifies deleting markup', async () => {
     const { app, engine, file } = await engineFixture();
     engine.setHtmlDiagnostics(file.path, [diagnostic('sanitized', 0)]);
-    const fixes = new ProblemFixes({ app, getProblems: (): readonly LinkProblem[] => engine.getAllProblems(), notify: vi.fn(), repairs: castTo({}) });
+    const fixes = new ProblemFixes({ app, getPathRepairScope: noPathRules, getProblems: (): readonly LinkProblem[] => engine.getAllProblems(), notify: vi.fn(), repairs: castTo({}) });
     expect(await fixes.getFixes(ensureNonNullable(engine.getProblems(file.path)[0]))).toEqual([]);
   });
 });
@@ -387,3 +388,7 @@ describe('HtmlCheckComponent', () => {
     expect(engine.getProblems(fifth.path)).toEqual([]);
   });
 });
+
+function noPathRules(): PathRepairScope {
+  return { forbiddenCharacterReplacement: '-', maxVaultRootPathLength: 0, platforms: [] };
+}

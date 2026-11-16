@@ -19,6 +19,7 @@ import {
 } from 'vitest';
 
 import type { LinkProblem } from './link-model.ts';
+import type { PathRepairScope } from './problem-fixes.ts';
 
 import { AutoRepairComponent } from './auto-repair-component.ts';
 import { LinkEngine } from './link-engine.ts';
@@ -61,7 +62,7 @@ async function fixture(content = '[[Missing|Label]]\n'): Promise<Fixture> {
   engine.initialize();
   const notify = vi.fn<(message: string, undo: () => Promise<void>) => void>();
   const repairs = new AutoRepairComponent({ app, engine, isEnabled: (): boolean => false, notify, resourceLockComponent: new ResourceLockComponent(app, 'vault-problems') });
-  const service = new ProblemFixes({ app, getProblems: (): readonly LinkProblem[] => engine.getAllProblems(), notify, repairs });
+  const service = new ProblemFixes({ app, getPathRepairScope: noPathRules, getProblems: (): readonly LinkProblem[] => engine.getAllProblems(), notify, repairs });
   const problem = ensureNonNullable(engine.getProblems(source.path)[0]);
   async function run(prefix: string, item: LinkProblem = problem): Promise<void> {
     const fixes = await service.getFixes(item);
@@ -272,3 +273,7 @@ describe('Explicit quick fixes', () => {
     }
   });
 });
+
+function noPathRules(): PathRepairScope {
+  return { forbiddenCharacterReplacement: '-', maxVaultRootPathLength: 0, platforms: [] };
+}

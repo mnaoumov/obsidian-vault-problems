@@ -5,6 +5,10 @@ import type {
 } from 'obsidian';
 
 import { BrokenLinkCandidateFinder } from '@mnaoumov/obsidian-lib/broken-link-candidates';
+import {
+  isFile,
+  isFolder
+} from '@mnaoumov/obsidian-lib/file-system';
 import { loadGitRenames } from '@mnaoumov/obsidian-lib/git-rename-history';
 import {
   editReferencesInContent,
@@ -12,7 +16,9 @@ import {
   LinkStyle
 } from '@mnaoumov/obsidian-lib/link';
 import { parseMetadata } from '@mnaoumov/obsidian-lib/metadata-cache';
+import { getAttachmentPlacement } from '@mnaoumov/obsidian-lib/misplaced-attachment';
 import { parseLink } from '@mnaoumov/obsidian-lib/parse-link';
+import { repairName } from '@mnaoumov/obsidian-lib/path-compatibility';
 import {
   createFolderSafe,
   readSafe
@@ -35,8 +41,10 @@ import type {
 } from './auto-repair-component.ts';
 import type {
   LinkProblem,
-  LinkRow
+  LinkRow,
+  MisplacedAttachment
 } from './link-model.ts';
+import type { PathCompatibilityScope } from './path-compatibility-component.ts';
 import type { SyntaxIssue } from './syntax-checks.ts';
 
 import { removeReference } from './remove-reference.ts';
@@ -44,6 +52,21 @@ import { findSyntaxIssues } from './syntax-checks.ts';
 
 const BLOCK_PREFIX_LENGTH = 2;
 const BLOCK_PREVIEW_LENGTH = 60;
+
+/**
+The row kinds that are references, as opposed to findings about text, names or placement.
+*/
+const LINK_ROW_KINDS = new Set<LinkRow['kind']>(['embed', 'frontmatter', 'link', 'reference']);
+
+/**
+The rules a repaired name is held to, and what replaces each forbidden character.
+*/
+export interface PathRepairScope extends PathCompatibilityScope {
+  /**
+  What each forbidden character is replaced with; empty deletes it.
+  */
+  readonly forbiddenCharacterReplacement: string;
+}
 
 /**
 An explicit, user-selected repair.
@@ -58,6 +81,10 @@ Dependencies shared by quick fixes and their single-operation undo.
 */
 export interface ProblemFixesConstructorParams {
   readonly app: App;
+  /**
+  Read when the fixes are offered, so a repaired name follows the current settings.
+  */
+  readonly getPathRepairScope: () => PathRepairScope;
   readonly getProblems: () => readonly LinkProblem[];
   readonly notify: (message: string, undo: () => Promise<void>) => void;
   readonly repairs: AutoRepairComponent;
@@ -83,6 +110,12 @@ export class ProblemFixes {
     const { row } = problem;
     if (problem.syntax) {
       return this.getSyntaxFixes(row.sourcePath, problem.syntax);
+    }
+    if (problem.pathViolation) {
+      return this.getPathFixes(row.sourcePath);
+    }
+    if (problem.misplacedAttachment) {
+      return this.getMisplacedAttachmentFixes(row.sourcePath, problem.misplacedAttachment);
     }
     // An HTML candidate comes from a lexical index; deleting markup on its word could lose content.
     if (problem.html) {
@@ -155,7 +188,7 @@ export class ProblemFixes {
       const candidates = ensureNonNullable(new BrokenLinkCandidateFinder({ aliasesByPath, filePaths: app.vault.getFiles().map((file) => file.path), folderNoteFileNames: ['!.md', 'index.md'], gitRenames, titlesByPath }).findAll([path]).get(path));
       for (const candidate of candidates) {
         fixes.push({ label: `Use ${candidate.path} — ${candidate.evidence.map((evidence) => evidence.description).join(' ')}`, run: () => this.retarget([row], candidate.path, subpath) });
-        const related = this.params.getProblems().filter((other) => other.row.kind !== 'syntax' && missingPath(other.row) === path && parseLinktext(decodeLink(other.row.link)).subpath === subpath).map((other) => other.row);
+        const related = this.params.getProblems().filter((other) => LINK_ROW_KINDS.has(other.row.kind) && missingPath(other.row) === path && parseLinktext(decodeLink(other.row.link)).subpath === subpath).map((other) => other.row);
         if (related.length > 1) {
           fixes.push({ label: `Update ${String(related.length)} links to ${candidate.path}${subpath}`, run: () => this.retarget(related, candidate.path, subpath) });
         }
@@ -206,6 +239,43 @@ export class ProblemFixes {
     return await loadGitRenames({ runGit: createDesktopGitRunner(adapter.getBasePath()) });
   }
 
+  /**
+  The move is recomputed when offered, so a note's attachment folder changed since the check is honoured.
+  */
+  private async getMisplacedAttachmentFixes(notePath: string, misplacedAttachment: MisplacedAttachment): Promise<ProblemFix[]> {
+    const attachmentFile = this.params.app.vault.getFileByPath(misplacedAttachment.attachmentPath);
+    if (!attachmentFile) {
+      return [];
+    }
+    const placement = await getAttachmentPlacement({ app: this.params.app, attachmentFile, notePath });
+    if (placement.isInProperFolder) {
+      return [];
+    }
+    const folder = placement.properAttachmentFolderPath;
+    const newPath = folder === '/' ? attachmentFile.name : `${folder}/${attachmentFile.name}`;
+    return [{ label: `Move ${attachmentFile.name} to ${folder}`, run: () => this.move(attachmentFile.path, newPath) }];
+  }
+
+  private getPathFixes(path: string): ProblemFix[] {
+    const file = this.params.app.vault.getAbstractFileByPath(path);
+    if (!file) {
+      return [];
+    }
+    const scope = this.params.getPathRepairScope();
+    const parentPath = getParentPath(path);
+    const newName = repairName({
+      basename: isFile(file) ? file.basename : file.name,
+      extension: isFile(file) ? file.extension : '',
+      forbiddenCharacterReplacement: scope.forbiddenCharacterReplacement,
+      isFolder: isFolder(file),
+      maxVaultRootPathLength: scope.maxVaultRootPathLength,
+      parentPath,
+      platforms: scope.platforms
+    });
+    // No name survives the repair, or the platforms that object have been turned off since the check.
+    return newName === null || newName === file.name ? [] : [{ label: `Rename to ${newName}`, run: () => this.move(path, parentPath ? `${parentPath}/${newName}` : newName) }];
+  }
+
   private getSyntaxFixes(path: string, issue: SyntaxIssue): ProblemFix[] {
     const { fix } = issue;
     if (!fix) {
@@ -224,6 +294,32 @@ export class ProblemFixes {
         await this.commit([{ after: before.slice(0, fix.offset) + fix.insert + before.slice(fix.offset), before, path }]);
       }
     }];
+  }
+
+  /**
+  Renames through the file manager, so Obsidian updates every link to the file, and offers to rename it back.
+  */
+  private async move(oldPath: string, newPath: string): Promise<void> {
+    const { app } = this.params;
+    const file = app.vault.getAbstractFileByPath(oldPath);
+    if (!file) {
+      throw new Error('The file changed since the problem was found. Open quick fixes again.');
+    }
+    if (app.vault.getAbstractFileByPath(newPath)) {
+      throw new Error(`Cannot move to ${newPath}: it already exists.`);
+    }
+    const parentPath = getParentPath(newPath);
+    if (parentPath) {
+      await createFolderSafe(app, parentPath);
+    }
+    await app.fileManager.renameFile(file, newPath);
+    this.params.notify(`Moved ${oldPath} to ${newPath}`, async () => {
+      const moved = app.vault.getAbstractFileByPath(newPath);
+      if (!moved || app.vault.getAbstractFileByPath(oldPath)) {
+        throw new Error('Cannot undo: the file has moved again, or its old path is taken.');
+      }
+      await app.fileManager.renameFile(moved, oldPath);
+    });
   }
 
   private async retarget(rows: readonly LinkRow[], path: string, subpath: string): Promise<void> {
@@ -294,6 +390,10 @@ function decodeLink(link: string): string {
   } catch {
     return link;
   }
+}
+
+function getParentPath(path: string): string {
+  return path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
 }
 
 function isMatchingReference(row: LinkRow, reference: Reference): boolean {

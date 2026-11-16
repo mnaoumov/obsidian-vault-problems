@@ -17,6 +17,7 @@ import {
 } from 'vitest';
 
 import type { LinkProblem } from './link-model.ts';
+import type { PathRepairScope } from './problem-fixes.ts';
 
 import { AutoRepairComponent } from './auto-repair-component.ts';
 import { LinkEngine } from './link-engine.ts';
@@ -151,7 +152,7 @@ describe('ProblemFixes syntax fix', () => {
     engine.setSyntaxIssues(file.path, findSyntaxIssues(SWALLOWED));
     const notify = vi.fn();
     const repairs = new AutoRepairComponent({ app: original, engine, isEnabled: (): boolean => false, notify, resourceLockComponent: new ResourceLockComponent(original, 'vault-problems') });
-    const fixes = new ProblemFixes({ app: original, getProblems: (): readonly LinkProblem[] => engine.getAllProblems(), notify, repairs });
+    const fixes = new ProblemFixes({ app: original, getPathRepairScope: noPathRules, getProblems: (): readonly LinkProblem[] => engine.getAllProblems(), notify, repairs });
     return { app, fixes, notify, problem: ensureNonNullable(engine.getProblems(file.path)[0]) };
   }
 
@@ -188,7 +189,11 @@ describe('ProblemFixes syntax fix', () => {
     const { engine, file } = await fixture();
     engine.setSyntaxIssues(file.path, findSyntaxIssues('a `b\n'));
     const original = engine.getProblems(file.path)[0];
-    const fixes = new ProblemFixes({ app: castTo(null), getProblems: (): readonly LinkProblem[] => [], notify: vi.fn(), repairs: castTo(null) });
+    const fixes = new ProblemFixes({ app: castTo(null), getPathRepairScope: noPathRules, getProblems: (): readonly LinkProblem[] => [], notify: vi.fn(), repairs: castTo(null) });
     expect(await fixes.getFixes(ensureNonNullable(original))).toEqual([]);
   });
 });
+
+function noPathRules(): PathRepairScope {
+  return { forbiddenCharacterReplacement: '-', maxVaultRootPathLength: 0, platforms: [] };
+}
