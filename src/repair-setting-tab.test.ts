@@ -2,6 +2,7 @@ import type { PluginManifest } from 'obsidian';
 
 import { ExternalAttachmentLinkMode } from '@mnaoumov/obsidian-lib/misplaced-attachment';
 import { PathCompatibilityPlatform } from '@mnaoumov/obsidian-lib/path-compatibility';
+import { ensureNonNullable } from '@mnaoumov/typescript-lib/type-guards';
 import { App } from 'obsidian-test-mocks/obsidian';
 import {
   describe,
@@ -40,9 +41,18 @@ describe('Repair preference', () => {
   it('saves and validates the path and misplaced-attachment settings', async () => {
     const app = App.createConfigured__().asOriginalType__();
     const plugin = new Plugin(app, manifest);
+    // Layout ready at once, so the path and attachment checks read the settings through the plugin.
+    vi.spyOn(app.workspace, 'onLayoutReady').mockImplementation((callback) => {
+      callback();
+    });
     vi.spyOn(plugin, 'loadData').mockResolvedValue({ externalAttachmentLinkMode: 'ReportUnowned', forbiddenCharacterReplacement: '_', maxVaultRootPathLength: 40, pathCompatibilityPlatforms: ['Linux', 'Unknown'] });
     const save = vi.spyOn(plugin, 'saveData').mockResolvedValue();
+    await app.vault.create('Bad:name.md', '');
     await plugin.onload();
+    const pathProblem = ensureNonNullable(plugin.getProblems().find((problem) => problem.row.kind === 'path'));
+    // The quick fix reads the replacement from the plugin's settings.
+    const pathFixes = await ensureNonNullable(plugin.problemFixes).getFixes(pathProblem);
+    expect(pathFixes.map((fix) => fix.label)).toEqual(['Rename to Bad_name.md']);
     const tab = new RepairSettingTab(app, plugin);
     expect(tab.getControlValue('externalAttachmentLinkMode')).toBe(ExternalAttachmentLinkMode.ReportUnowned);
     expect(tab.getControlValue('forbiddenCharacterReplacement')).toBe('_');
@@ -66,7 +76,7 @@ describe('Repair preference', () => {
     plugin.unload();
   });
 
-  it.each([null, 'invalid', {}, { isAutoRepairEnabled: true }, { isAutoRepairEnabled: 'invalid' }])('defaults to enabled with %j data', async (data) => {
+  it.each([null, 'invalid', {}, { isAutoRepairEnabled: true }, { externalAttachmentLinkMode: 'invalid', isAutoRepairEnabled: 'invalid' }])('defaults to enabled with %j data', async (data) => {
     const app = App.createConfigured__().asOriginalType__();
     const plugin = new Plugin(app, manifest);
     vi.spyOn(plugin, 'loadData').mockResolvedValue(data);

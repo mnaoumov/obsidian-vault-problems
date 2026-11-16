@@ -134,6 +134,13 @@ describe('LinkEngine path problems', () => {
     expect(problem?.message).toContain(message);
   });
 
+  it('refuses a violation type it does not know', async () => {
+    const { engine } = await fixture({ 'Note.md': '' });
+    expect(() => {
+      engine.setPathViolations('Note.md', [{ platform: null, type: castTo<PathCompatibilityViolationType>('Unknown') }]);
+    }).toThrow();
+  });
+
   it('clears a path and everything under it, or every path', async () => {
     const { engine } = await fixture({ 'A/B.md': '', 'C.md': '' });
     const violation = { platform: PathCompatibilityPlatform.Windows, type: PathCompatibilityViolationType.ReservedName };
@@ -183,6 +190,15 @@ describe('ProblemFixes path fix', () => {
     await undo();
     expect(app.vault.getFileByPath('Sub/Bad:name.md')).not.toBeNull();
     await expect(undo()).rejects.toThrow('Cannot undo');
+  });
+
+  it('renames a folder, keeping no extension', async () => {
+    const { app, engine, fixes } = await fixture({ 'Bad:dir/Note.md': '' });
+    engine.setPathViolations('Bad:dir', [{ characters: [':'], platform: PathCompatibilityPlatform.Windows, type: PathCompatibilityViolationType.ForbiddenCharacter }]);
+    const [fix] = await fixes.getFixes(ensureNonNullable(engine.getProblems('Bad:dir')[0]));
+    expect(fix?.label).toBe('Rename to Bad-dir');
+    await ensureNonNullable(fix).run();
+    expect(app.vault.getFolderByPath('Bad-dir')).not.toBeNull();
   });
 
   it('offers nothing for a gone path or a name the current platforms accept, and refuses a taken target', async () => {
@@ -241,6 +257,74 @@ describe('MisplacedAttachmentComponent', () => {
     await vi.waitFor(() => {
       expect(kindProblems(engine, 'misplaced-attachment')).toEqual([]);
     });
+    component.unload();
+  });
+
+  it('skips links to notes, and keeps only the latest judgement when a note changes during a scan', async () => {
+    const { app, caches, engine, ready } = await fixture({ 'Elsewhere/image.png': '', 'Note.md': '![[Other]] ![[Elsewhere/image.png]]', 'Other.md': '' });
+    const component = new MisplacedAttachmentComponent({ app, engine, getMode: (): ExternalAttachmentLinkMode => ExternalAttachmentLinkMode.Report });
+    component.load();
+    const note = ensureNonNullable(app.vault.getFileByPath('Note.md'));
+    ready();
+    // The scan is awaiting the first note's placement; two changes start two newer checks of the same note.
+    caches.set(note.path, metadata('![[Elsewhere/image.png]]'));
+    engine.update({ kind: 'changed', path: note.path });
+    engine.update({ kind: 'changed', path: note.path });
+    await vi.waitFor(() => {
+      expect(kindProblems(engine, 'misplaced-attachment').map((problem) => problem.row.link)).toEqual(['Elsewhere/image.png']);
+    });
+    component.unload();
+  });
+
+  it('ignores unresolved links, and drops a deleted note\'s problems', async () => {
+    const { app, engine, ready } = await fixture({ 'Elsewhere/image.png': '', 'Note.md': '![[Missing.png]] ![[Elsewhere/image.png]]' });
+    const component = new MisplacedAttachmentComponent({ app, engine, getMode: (): ExternalAttachmentLinkMode => ExternalAttachmentLinkMode.Report });
+    component.load();
+    ready();
+    await vi.waitFor(() => {
+      expect(kindProblems(engine, 'misplaced-attachment').map((problem) => problem.row.link)).toEqual(['Elsewhere/image.png']);
+    });
+    await app.vault.delete(ensureNonNullable(app.vault.getFileByPath('Note.md')));
+    engine.update({ kind: 'delete', path: 'Note.md' });
+    await vi.waitFor(() => {
+      expect(kindProblems(engine, 'misplaced-attachment')).toEqual([]);
+    });
+    component.unload();
+  });
+
+  it('stops a scan and a judgement that finish after it is unloaded', async () => {
+    const { app, engine, ready } = await fixture({ 'Elsewhere/image.png': '', 'Note.md': '![[Elsewhere/image.png]]' });
+    const component = new MisplacedAttachmentComponent({ app, engine, getMode: (): ExternalAttachmentLinkMode => ExternalAttachmentLinkMode.Report });
+    component.load();
+    ready();
+    engine.update({ kind: 'changed', path: 'Note.md' });
+    component.unload();
+    await new Promise((resolve) => {
+      window.setTimeout(resolve, 50);
+    });
+    expect(kindProblems(engine, 'misplaced-attachment')).toEqual([]);
+  });
+});
+
+describe('ProblemFixes misplaced-attachment fix', () => {
+  it('offers nothing once the attachment is gone, and refuses to move a file that disappeared after the offer', async () => {
+    const { app, engine, fixes, ready } = await fixture({ 'Elsewhere/image.png': '', 'Note.md': '![[Elsewhere/image.png]]' });
+    const component = new MisplacedAttachmentComponent({ app, engine, getMode: (): ExternalAttachmentLinkMode => ExternalAttachmentLinkMode.Report });
+    component.load();
+    ready();
+    await vi.waitFor(() => {
+      expect(kindProblems(engine, 'misplaced-attachment')).toHaveLength(1);
+    });
+    const problem = ensureNonNullable(kindProblems(engine, 'misplaced-attachment')[0]);
+    // The proper folder is asked again when the fixes are offered, so a changed setting is honoured.
+    app.vault.setConfig('attachmentFolderPath', 'Files');
+    const [fix] = await fixes.getFixes(problem);
+    expect(fix?.label).toBe('Move image.png to Files');
+    app.vault.setConfig('attachmentFolderPath', 'Elsewhere');
+    expect(await fixes.getFixes(problem)).toEqual([]);
+    await app.vault.delete(ensureNonNullable(app.vault.getFileByPath('Elsewhere/image.png')));
+    await expect(ensureNonNullable(fix).run()).rejects.toThrow('changed since');
+    expect(await fixes.getFixes(problem)).toEqual([]);
     component.unload();
   });
 });

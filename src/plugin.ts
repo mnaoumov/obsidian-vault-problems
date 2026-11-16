@@ -362,6 +362,6 @@ export class Plugin extends PluginBase {
 }
 
 function getDefaultPlatforms(): PathCompatibilityPlatform[] {
-  const platform = getCurrentPathCompatibilityPlatform();
-  return platform === null ? [] : [platform];
+  // A platform with no profile starts with every check off.
+  return [getCurrentPathCompatibilityPlatform()].filter((platform): platform is PathCompatibilityPlatform => platform !== null);
 }
