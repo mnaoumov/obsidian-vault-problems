@@ -116,6 +116,14 @@ describe('Problems panel', () => {
     plugin.unload();
   });
 
+  it('names the location of a path problem as the name itself', async () => {
+    const { plugin, problem, problems, view } = await fixture();
+    problems.splice(0, problems.length, { ...problem, message: 'Windows reserves this name for a device', row: { ...problem.row, kind: 'path', position: null } });
+    view.render();
+    expect(view.contentEl.textContent).toContain('Name: Windows reserves this name for a device');
+    plugin.unload();
+  });
+
   it('navigates to a source range and safely ignores a removed source', async () => {
     const { app, file, plugin, view } = await fixture();
     const leaf = app.workspace.getLeaf(false);
