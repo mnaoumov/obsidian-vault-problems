@@ -82,7 +82,7 @@ export class ProblemsView extends ItemView {
     this.contentEl.addClass('vault-problems-view');
     const controls = this.contentEl.createDiv({ cls: 'vault-problems-filters' });
     const kind = controls.createEl('select', { attr: { 'aria-label': 'Problem kind' } });
-    for (const value of ['', 'link', 'embed', 'frontmatter', 'reference', 'syntax', 'html', 'misplaced-attachment', 'path']) {
+    for (const value of ['', 'link', 'embed', 'frontmatter', 'reference', 'syntax', 'html', 'misplaced-attachment', 'path', 'community-plugin']) {
       kind.createEl('option', { text: value || 'All kinds', value });
     }
     kind.value = this.kind;
@@ -161,7 +161,7 @@ export class ProblemsView extends ItemView {
   private async openProblem(problem: LinkProblem): Promise<void> {
     const file = this.app.vault.getFileByPath(problem.row.sourcePath);
     if (!file) {
-      // A folder's name problem has nothing to open; its quick fixes are on the row.
+      // A folder's name problem, or a config file outside the vault's file index, has nothing to open; its quick fixes are on the row.
       return;
     }
     const leaf = this.app.workspace.getLeaf(false);
@@ -270,11 +270,23 @@ export class ProblemsView extends ItemView {
 }
 
 /**
-Where in its file a problem sits: a line, a frontmatter property, or the file or folder name itself.
+Where in its file a problem sits: a line, a frontmatter property, the file or folder name itself, or a plugin id in
+the enabled list.
 */
 function describeLocation(row: LinkRow): string {
   if (row.position) {
     return `Line ${String(row.position.start.line + 1)}`;
   }
-  return row.kind === 'path' ? 'Name' : `Property ${row.key ?? ''}`;
+  switch (row.kind) {
+    case 'community-plugin': {
+      // The row's link is the enabled id itself.
+      return `Plugin ${row.link}`;
+    }
+    case 'path': {
+      return 'Name';
+    }
+    default: {
+      return `Property ${row.key ?? ''}`;
+    }
+  }
 }

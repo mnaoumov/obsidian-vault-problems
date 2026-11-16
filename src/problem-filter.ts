@@ -18,6 +18,7 @@ export type ProblemGrouping = 'file' | 'kind';
 How each row kind is named as a group heading.
 */
 export const PROBLEM_KIND_LABELS: Readonly<Record<LinkProblem['row']['kind'], string>> = {
+  'community-plugin': 'Community plugins',
   'embed': 'Embeds',
   'frontmatter': 'Frontmatter links',
   'html': 'HTML',
@@ -93,9 +94,9 @@ export function isIgnoredPath(path: string, patterns: readonly string[]): boolea
 }
 
 /**
-Whether a problem is a candidate to review rather than a break: an HTML finding comes from a lexical index, and a
-misplaced attachment still resolves.
+Whether a problem is a candidate to review rather than a break: an HTML finding comes from a lexical index, a
+misplaced attachment still resolves, and an enabled id with no plugin may be one still syncing to this device.
 */
 export function isWarningProblem(problem: LinkProblem): boolean {
-  return Boolean(problem.html ?? problem.misplacedAttachment);
+  return Boolean(problem.html ?? problem.misplacedAttachment ?? problem.missingCommunityPluginId);
 }

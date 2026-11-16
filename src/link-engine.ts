@@ -66,6 +66,7 @@ A live snapshot shared by the problems view, repairs and editor diagnostics.
 export class LinkEngine extends AsyncEventsBase<LinkEngineEventMap> {
   private readonly app: App;
   private batchDepth = 0;
+  private readonly communityPluginProblems = new Map<string, readonly LinkProblem[]>();
   private readonly htmlProblems = new Map<string, readonly LinkProblem[]>();
   private initialized = false;
   private readonly misplacedProblems = new Map<string, readonly LinkProblem[]>();
@@ -235,6 +236,39 @@ export class LinkEngine extends AsyncEventsBase<LinkEngineEventMap> {
   }
 
   /**
+  Replaces the community-plugin problems: one per enabled id with no installed plugin, which Obsidian skips silently.
+
+  @param configPath - The config file that lists the enabled ids, `<configDir>/community-plugins.json`. It is outside
+  the vault's file index, so it is not required to exist there.
+  @param missingIds - The enabled ids with no installed plugin, in the order to show them.
+  */
+  public setMissingCommunityPlugins(configPath: string, missingIds: readonly string[]): void {
+    const problems = missingIds.map((id): LinkProblem => ({
+      cause: null,
+      message: `${id} is enabled but not installed, so Obsidian skips it silently. It is often left over after a plugin changed its id, or after its folder was deleted by hand`,
+      missingCommunityPluginId: id,
+      row: {
+        id: `community-plugin:${id}`,
+        key: id,
+        kind: 'community-plugin',
+        link: id,
+        position: null,
+        sourcePath: configPath,
+        target: null,
+        targetPath: null
+      },
+      status: 'standing'
+    }));
+    // A config folder renamed in settings moves the list to another path; the old one lists nothing any more.
+    for (const path of this.communityPluginProblems.keys()) {
+      if (path !== configPath) {
+        this.replaceProblems(this.communityPluginProblems, path, [], (problem) => problem.missingCommunityPluginId);
+      }
+    }
+    this.replaceProblems(this.communityPluginProblems, configPath, problems, (problem) => problem.missingCommunityPluginId);
+  }
+
+  /**
   Replaces the path problems of one file or folder name, and publishes the change when it differs.
 
   @param path - The file or folder path.
@@ -377,7 +411,7 @@ export class LinkEngine extends AsyncEventsBase<LinkEngineEventMap> {
   }
 
   private getTextStores(): readonly Map<string, readonly LinkProblem[]>[] {
-    return [this.syntaxProblems, this.htmlProblems, this.misplacedProblems, this.pathProblems];
+    return [this.syntaxProblems, this.htmlProblems, this.misplacedProblems, this.pathProblems, this.communityPluginProblems];
   }
 
   private readRows(sourcePath: string, cache: CachedMetadata): LinkRow[] {
@@ -505,6 +539,18 @@ export class LinkEngine extends AsyncEventsBase<LinkEngineEventMap> {
     if (!this.app.vault.getAbstractFileByPath(sourcePath)) {
       return;
     }
+    this.replaceProblems(store, sourcePath, problems, getDetail);
+  }
+
+  /**
+  Replaces one path's problems in a store, publishing only a real difference.
+  */
+  private replaceProblems(
+    store: Map<string, readonly LinkProblem[]>,
+    sourcePath: string,
+    problems: readonly LinkProblem[],
+    getDetail: (problem: LinkProblem) => unknown
+  ): void {
     const previous = store.get(sourcePath) ?? [];
     if (JSON.stringify(previous.map((problem) => getDetail(problem))) === JSON.stringify(problems.map((problem) => getDetail(problem)))) {
       return;
