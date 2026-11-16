@@ -18,6 +18,8 @@ Open [04 Syntax checks](<./04 Syntax checks.md>) for frontmatter and Markdown mi
 
 Open [05 HTML problems](<./05 HTML problems.md>) for HTML tags that Obsidian does not know or removes when it renders a note.
 
+Open [06 Path and attachment checks](<./06 Path and attachment checks.md>) for names a platform cannot store or a link cannot reach, and attachments kept outside their folder.
+
 ## Materials
 
 The [source note](<./Materials/01 Live links/Source.md>) and [target note](<./Materials/01 Live links/Target.md>) supply the walkthrough's linked material.
