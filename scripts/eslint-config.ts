@@ -30,7 +30,11 @@ export const configs: Linter.Config[] = defineEslintConfigs({
           // Is turned off in `biome.jsonc` for exactly the same reason. The shared config sets
           // `dot-notation` only over `context.testFiles`, and only with the two class-property allowances,
           // So this clash is not handled upstream and has to be re-stated here.
-          '@typescript-eslint/dot-notation': ['error', { allowIndexSignaturePropertyAccess: true }]
+          '@typescript-eslint/dot-notation': ['error', { allowIndexSignaturePropertyAccess: true }],
+          // "No value" is `null`, as in the libraries this plugin builds on. `undefined` stays only where
+          // A shape mirrors an API that returns it (Obsidian's, CodeMirror's, a DOM callback), each under its
+          // Own directive.
+          'typescript-dev-toolkit/no-undefined-return-type': 'error'
         }
       },
       {

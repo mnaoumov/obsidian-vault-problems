@@ -205,7 +205,7 @@ export class Plugin extends PluginBase {
     this.problemFixes = new ProblemFixes({ app: this.app, getPathRepairScope: (): PathRepairScope => this.getPathRepairScope(), getProblems: (): readonly import('./link-model.ts').LinkProblem[] => this.getProblems(), notify: showRepairNotice.bind(undefined, this.pluginNoticeComponent), repairs });
     const engine = this.linkEngine;
     const diagnostics = new EditorProblems({
-      getPath: (state): string | undefined => state.field(castTo<StateField<MarkdownFileInfo>>(editorInfoField), false)?.file?.path,
+      getPath: (state): null | string => state.field(castTo<StateField<MarkdownFileInfo>>(editorInfoField), false)?.file?.path ?? null,
       getProblems: (path): readonly LinkProblem[] => engine.getProblems(path),
       showFixes: (problem, view): void => {
         this.showEditorFixes(problem, view);
@@ -320,8 +320,8 @@ export class Plugin extends PluginBase {
   private showEditorFixes(problem: RangedLinkProblem, view: EditorView): void {
     const snapshot = view.state.doc;
     const path = getPath();
-    function getPath(): string | undefined {
-      return view.state.field(castTo<StateField<MarkdownFileInfo>>(editorInfoField), false)?.file?.path;
+    function getPath(): null | string {
+      return view.state.field(castTo<StateField<MarkdownFileInfo>>(editorInfoField), false)?.file?.path ?? null;
     }
     invokeAsyncSafely(async () => {
       try {

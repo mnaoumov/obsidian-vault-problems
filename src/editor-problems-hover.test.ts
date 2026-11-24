@@ -70,7 +70,7 @@ describe('Diagnostic hover', () => {
     let refresh: (path?: string) => void = vi.fn();
     let path = '';
     const diagnostics = new EditorProblems({
-      getPath: (): string | undefined => path || undefined,
+      getPath: (): null | string => path || null,
       getProblems: (): readonly LinkProblem[] => [],
       showFixes: vi.fn(),
       subscribe: (listener): () => void => {
@@ -79,7 +79,7 @@ describe('Diagnostic hover', () => {
       }
     });
     const view = new EditorView({ parent: document.body, state: EditorState.create({ extensions: diagnostics.extension }) });
-    expect(diagnostics.getProblemAtCursor(view)).toBeUndefined();
+    expect(diagnostics.getProblemAtCursor(view)).toBeNull();
     path = 'Note.md';
     view.dispatch({});
     const dispatch = vi.spyOn(view, 'dispatch');
@@ -92,7 +92,7 @@ describe('Diagnostic hover', () => {
     expect(dispatch).toHaveBeenCalledOnce();
     view.destroy();
     const bare = new EditorView({ parent: document.body });
-    expect(diagnostics.getProblemAtCursor(bare)).toBeUndefined();
+    expect(diagnostics.getProblemAtCursor(bare)).toBeNull();
     bare.destroy();
   });
 });

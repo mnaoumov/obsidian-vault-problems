@@ -26,7 +26,7 @@ export interface RangedLinkProblem extends LinkProblem {
 }
 
 interface EditorProblemsConstructorParams {
-  readonly getPath: (state: EditorState) => string | undefined;
+  readonly getPath: (state: EditorState) => null | string;
   readonly getProblems: (path: string) => readonly LinkProblem[];
   readonly showFixes: (problem: RangedLinkProblem, view: EditorView) => void;
   readonly subscribe: (refresh: (path?: string) => void) => () => void;
@@ -127,11 +127,11 @@ export class EditorProblems {
     ];
   }
 
-  public getProblemAtCursor(view: EditorView): RangedLinkProblem | undefined {
+  public getProblemAtCursor(view: EditorView): null | RangedLinkProblem {
     return this.findProblem(view, view.state.selection.main.head);
   }
 
-  private findProblem(view: EditorView, offset: number): RangedLinkProblem | undefined {
-    return view.plugin(this.projection)?.problems.find((problem) => problem.row.position.start.offset <= offset && offset < problem.row.position.end.offset);
+  private findProblem(view: EditorView, offset: number): null | RangedLinkProblem {
+    return view.plugin(this.projection)?.problems.find((problem) => problem.row.position.start.offset <= offset && offset < problem.row.position.end.offset) ?? null;
   }
 }

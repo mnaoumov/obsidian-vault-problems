@@ -42,9 +42,9 @@ describe('Rename handler bulk operations', () => {
           throw new Error('The link engine did not load.');
         }
         const timeoutInMilliseconds = 8000;
-        function getApi(): AdvancedRenameAndDeleteHandlerApi | undefined {
+        function getApi(): AdvancedRenameAndDeleteHandlerApi | null {
           return (globalThis as RegistryHolder).__obsidianLib?.pluginApiRegistry?.value.records['advanced-rename-and-delete-handler']
-            ?.find((record) => !record.isRevoked && record.apiVersion === '1.4.0')?.api;
+            ?.find((record) => !record.isRevoked && record.apiVersion === '1.4.0')?.api ?? null;
         }
         await waitUntil({ message: 'the provider publishes contract 1.4.0', predicate: () => Boolean(getApi()), timeoutInMilliseconds });
         const api = getApi();
@@ -109,9 +109,9 @@ describe('Rename handler bulk operations', () => {
           throw new Error('The link engine did not load.');
         }
         const timeoutInMilliseconds = 8000;
-        function getApi(): AdvancedRenameAndDeleteHandlerApi | undefined {
+        function getApi(): AdvancedRenameAndDeleteHandlerApi | null {
           return (globalThis as RegistryHolder).__obsidianLib?.pluginApiRegistry?.value.records['advanced-rename-and-delete-handler']
-            ?.find((record) => !record.isRevoked && record.apiVersion === '1.4.0')?.api;
+            ?.find((record) => !record.isRevoked && record.apiVersion === '1.4.0')?.api ?? null;
         }
         await waitUntil({ message: 'the provider publishes contract 1.4.0', predicate: () => Boolean(getApi()), timeoutInMilliseconds });
         const api = getApi();

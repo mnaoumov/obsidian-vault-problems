@@ -236,13 +236,13 @@ export class AutoRepairComponent extends ComponentEx {
     this.intents = this.intents.filter((intent) => !isTouched(operationPaths, intent.oldPath) && !isTouched(operationPaths, intent.newPath) && !hasTouchedSource(operationPaths, intent.rows));
   }
 
-  private findIntent(link: string, source: TFile, intents: readonly RepairIntent[]): RepairIntent | undefined {
+  private findIntent(link: string, source: TFile, intents: readonly RepairIntent[]): null | RepairIntent {
     const { app } = this.params;
     let decoded: string;
     try {
       decoded = decodeURI(link);
     } catch {
-      return;
+      return null;
     }
     const parsed = parseLinktext(decoded);
     const target = parsed.path ? app.metadataCache.getFirstLinkpathDest(parsed.path, source.path) : source;
@@ -251,10 +251,10 @@ export class AutoRepairComponent extends ComponentEx {
       && candidate.rows.some((row) => row.sourcePath === source.path && row.link === link)
     );
     if (!intent) {
-      return;
+      return null;
     }
     const cache = app.metadataCache.getFileCache(ensureNonNullable(target));
-    return cache && resolveSubpath(cache, parsed.subpath) ? undefined : intent;
+    return cache && resolveSubpath(cache, parsed.subpath) ? null : intent;
   }
 
   private async findReady(): Promise<RepairIntent[]> {
@@ -292,10 +292,10 @@ export class AutoRepairComponent extends ComponentEx {
     return ready;
   }
 
-  private getReferenceDestination(source: TFile, link: string, intents: readonly RepairIntent[]): string | undefined {
+  private getReferenceDestination(source: TFile, link: string, intents: readonly RepairIntent[]): null | string {
     const intent = this.findIntent(link, source, intents);
     if (!intent) {
-      return undefined;
+      return null;
     }
     const generated = generateMarkdownLink({
       alias: 'reference',

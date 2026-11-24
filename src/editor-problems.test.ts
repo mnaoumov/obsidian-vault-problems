@@ -38,7 +38,7 @@ describe('EditorProblems', () => {
     expect(diagnostics.getProblemAtCursor(view)).toBe(problem);
     view.dispatch({ changes: { from: 0, insert: 'x' } });
     expect(view.dom.querySelector('.vault-problems-underline')).toBeNull();
-    expect(diagnostics.getProblemAtCursor(view)).toBeUndefined();
+    expect(diagnostics.getProblemAtCursor(view)).toBeNull();
     problems = [];
     refresh();
     await noopAsync();
@@ -67,7 +67,7 @@ describe('EditorProblems', () => {
     view.dispatch({});
     expect(view.dom.querySelectorAll('.vault-problems-underline')).toHaveLength(1);
     view.dispatch({ selection: { anchor: 11 } });
-    expect(diagnostics.getProblemAtCursor(view)).toBeUndefined();
+    expect(diagnostics.getProblemAtCursor(view)).toBeNull();
     view.destroy();
   });
 });
