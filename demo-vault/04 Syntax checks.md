@@ -30,5 +30,6 @@ await require('/demoSetup.ts').setTitleQuote(app, true);
 2. A link destination with no closing `)`, such as `[text](Note.md`, shows as plain text.
 3. A code span with no closing backticks in its paragraph shows its backticks literally.
 4. A `%%` comment opener with no closer hides the rest of the note.
+5. A code block fence with no closing fence turns the rest of the note into code, so its links and headings stop working. Its quick fix adds the matching closing fence at the end of the note, with **Undo**.
 
 The checks skip fenced code blocks and code spans, and choose **syntax** in **Problem kind** to list only these problems. They read the note's text, so they work in Reading view, Live Preview and Source mode alike.

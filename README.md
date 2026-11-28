@@ -41,7 +41,7 @@ A copy of the vault ships with every release. You can access it via any of the f
 2. **Automatic repairs.** A heading edited in place, or a heading or block cut from one note and pasted into another, takes its links with it. Each repair shows a notice with a one-step **Undo**. See [Automatic repairs](<./demo-vault/02 Automatic repairs.md>).
 3. **Problems view.** One live list of every problem in the vault, grouped by note, with quick fixes. See [Problems](<./demo-vault/03 Problems.md>).
 4. **Editor problems.** The same problems underlined where they are, with the same quick fixes on hover and at the cursor.
-5. **Syntax checks.** Frontmatter that does not parse or swallowed its properties, an unclosed link destination, code span or `%%` comment. See [Syntax checks](<./demo-vault/04 Syntax checks.md>).
+5. **Syntax checks.** Frontmatter that does not parse or swallowed its properties, an unclosed link destination, code span, code block or `%%` comment. See [Syntax checks](<./demo-vault/04 Syntax checks.md>).
 6. **HTML problems.** Tags that Obsidian's sanitizer changes or removes, with `Advanced Metadata Cache` installed. See [HTML problems](<./demo-vault/05 HTML problems.md>).
 7. **Path and attachment checks.** A file or folder name that a platform the vault syncs to cannot store, and a link to an attachment kept outside the note's attachment folder. See [Path and attachment checks](<./demo-vault/06 Path and attachment checks.md>).
 8. **Community plugin check.** A community plugin id that is enabled but not installed, which Obsidian skips silently. See [Community plugin check](#community-plugin-check).
@@ -76,6 +76,7 @@ Some mistakes change what a note means without any visible error, so they are re
 3. A link destination with no closing `)`, which shows as plain text.
 4. A code span with no closing backticks in its paragraph.
 5. A `%%` comment opener with no closer, which hides the rest of the note.
+6. A code block fence (```` ``` ```` or `~~~`) with no closing fence, which turns the rest of the note into code and hides its links and headings. Its quick fix adds the matching closing fence at the end of the note.
 
 They appear in the Problems view under the **syntax** kind and as editor underlines. Fenced code blocks and code spans are skipped.
 
