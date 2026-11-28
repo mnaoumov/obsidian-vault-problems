@@ -101,6 +101,40 @@ describe('findSyntaxIssues', () => {
     expect(codes('```js\nconst a = `x;\n[a](b\n%%\n```\n\n~~~~\n`\n~~~~\n\nUse `%%` and `[a](b`.\n')).toEqual([]);
   });
 
+  it('reports an unclosed code fence at its opener, with the fix that closes it at the end of the note', () => {
+    const content = '# Title\n\n  ````js\nconst a = 1;\n```\n[[Hidden link]]\n';
+    const issues = findSyntaxIssues(content);
+    expect(issues.map((issue) => issue.code)).toEqual(['unclosed-code-fence']);
+    expect(issues[0]?.position.start).toEqual({ col: 2, line: 2, offset: 11 });
+    expect(issues[0]?.position.end.offset).toBe(17);
+    expect(issues[0]?.message).toContain('````');
+    expect(issues[0]?.fix?.label).toBe('Close the code block with ```` at the end of the note');
+    const fixed = applyFix(content);
+    expect(fixed).toBe(`${content}\`\`\`\`\n`);
+    expect(findSyntaxIssues(fixed)).toEqual([]);
+  });
+
+  it('closes an unclosed tilde fence on a line of its own when the note has no trailing newline', () => {
+    const content = 'a\n~~~\ncode';
+    expect(applyFix(content)).toBe('a\n~~~\ncode\n~~~');
+    expect(findSyntaxIssues(applyFix(content))).toEqual([]);
+  });
+
+  it('keeps CRLF line endings when closing an unclosed fence', () => {
+    expect(applyFix('```\r\ncode\r\n')).toBe('```\r\ncode\r\n```\r\n');
+    expect(applyFix('```\r\ncode')).toBe('```\r\ncode\r\n```');
+  });
+
+  it('does not let a shorter or other-character marker close a fence', () => {
+    expect(codes('````\n```\n~~~~\n')).toEqual(['unclosed-code-fence']);
+    expect(codes('```\n``` js\n')).toEqual(['unclosed-code-fence']);
+  });
+
+  it('reports an unclosed fence after frontmatter and ignores one inside an unclosed comment', () => {
+    expect(findSyntaxIssues('---\na: 1\n---\n```\nx\n')[0]?.position.start).toEqual({ col: 0, line: 3, offset: 13 });
+    expect(codes('%%\n```\nx\n')).toEqual(['unclosed-comment']);
+  });
+
   it('does not take a backtick line with backticks in its info string for a fence', () => {
     expect(codes('``` a ` b\n')).toEqual(['unclosed-code-span', 'unclosed-code-span']);
   });

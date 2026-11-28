@@ -30,10 +30,15 @@ The kinds of syntax issues the checks report.
 */
 export type SyntaxIssueCode =
   | 'frontmatter-parse-error'
+  | 'unclosed-code-fence'
   | 'unclosed-code-span'
   | 'unclosed-comment'
   | 'unclosed-link-destination'
   | 'unterminated-quote';
+
+interface Fence extends Range {
+  readonly marker: string;
+}
 
 interface Line {
   readonly end: number;
@@ -49,6 +54,11 @@ interface Range {
 interface Segment extends Range {
   readonly codeSpans: readonly Range[];
   readonly unclosedCodeSpans: readonly Range[];
+}
+
+interface SegmentsResult {
+  readonly segments: readonly Segment[];
+  readonly unclosedFence: Fence | null;
 }
 
 const COMMENT_MARKER = '%%';
@@ -83,8 +93,30 @@ function createLocator(lines: readonly Line[]): (offset: number) => Loc {
   };
 }
 
+/**
+Reports a fence opener with no closer, which turns the rest of the note into code (CommonMark runs it to the end of the
+document), hiding every link and heading after it. The fix appends the matching closer on a line of its own.
+
+The idea comes from `VCoder IDE` (https://github.com/weank1984/obsidian-vcoder-ide, MIT), whose note diagnostics
+report unclosed code fences; no code is copied from it.
+*/
+function createUnclosedFenceIssue(content: string, fence: Fence, locate: (offset: number) => Loc): SyntaxIssue {
+  const newline = content.includes('\r\n') ? '\r\n' : '\n';
+  const hasTrailingNewline = content.endsWith('\n');
+  return {
+    code: 'unclosed-code-fence',
+    fix: {
+      insert: hasTrailingNewline ? `${fence.marker}${newline}` : `${newline}${fence.marker}`,
+      label: `Close the code block with ${fence.marker} at the end of the note`,
+      offset: content.length
+    },
+    message: `The code block opened with ${fence.marker} is never closed, so the rest of the note is code and its links and headings are ignored.`,
+    position: { end: locate(fence.end), start: locate(fence.start) }
+  };
+}
+
 function findBodyIssues(content: string, lines: readonly Line[], locate: (offset: number) => Loc): SyntaxIssue[] {
-  const segments = readSegments(content, lines);
+  const { segments, unclosedFence } = readSegments(content, lines);
   const issues: SyntaxIssue[] = [];
   const comments: Range[] = [];
   let openComment: null | number = null;
@@ -111,6 +143,9 @@ function findBodyIssues(content: string, lines: readonly Line[], locate: (offset
       message: 'The comment opened with %% is never closed, so everything after it is hidden.',
       position: { end: locate(openComment + COMMENT_MARKER.length), start: locate(openComment) }
     });
+  }
+  if (unclosedFence && !isInside(unclosedFence.start, comments)) {
+    issues.push(createUnclosedFenceIssue(content, unclosedFence, locate));
   }
   for (const segment of segments) {
     for (const span of segment.unclosedCodeSpans) {
@@ -307,9 +342,9 @@ function readCodeSpans(content: string, segment: Range): Pick<Segment, 'codeSpan
   return { codeSpans, unclosedCodeSpans };
 }
 
-function readSegments(content: string, lines: readonly Line[]): Segment[] {
+function readSegments(content: string, lines: readonly Line[]): SegmentsResult {
   const ranges: Range[] = [];
-  let fence: null | string = null;
+  let fence: Fence | null = null;
   let start = -1;
   let end = -1;
   function flush(): void {
@@ -321,7 +356,7 @@ function readSegments(content: string, lines: readonly Line[]): Segment[] {
   for (const line of lines) {
     const marker = FENCE_PATTERN.exec(line.text)?.groups?.['marker'];
     if (fence !== null) {
-      if (marker?.startsWith(fence.charAt(0)) && marker.length >= fence.length && !line.text.slice(line.text.indexOf(marker) + marker.length).trim()) {
+      if (marker?.startsWith(fence.marker.charAt(0)) && marker.length >= fence.marker.length && !line.text.slice(line.text.indexOf(marker) + marker.length).trim()) {
         fence = null;
       }
       continue;
@@ -329,7 +364,7 @@ function readSegments(content: string, lines: readonly Line[]): Segment[] {
     // A backtick fence opener cannot contain a backtick in its info string.
     if (marker && !(marker.startsWith('`') && line.text.slice(line.text.indexOf(marker) + marker.length).includes('`'))) {
       flush();
-      fence = marker;
+      fence = { end: line.end, marker, start: line.start + line.text.indexOf(marker) };
       continue;
     }
     if (!line.text.trim()) {
@@ -342,7 +377,7 @@ function readSegments(content: string, lines: readonly Line[]): Segment[] {
     end = line.end;
   }
   flush();
-  return ranges.map((range) => ({ ...range, ...readCodeSpans(content, range) }));
+  return { segments: ranges.map((range) => ({ ...range, ...readCodeSpans(content, range) })), unclosedFence: fence };
 }
 
 function splitLines(content: string): Line[] {
