@@ -29,6 +29,8 @@ export interface SyntaxIssue {
 The kinds of syntax issues the checks report.
 */
 export type SyntaxIssueCode =
+  | 'duplicate-frontmatter-key'
+  | 'duplicate-reference-definition'
   | 'frontmatter-parse-error'
   | 'unclosed-code-fence'
   | 'unclosed-code-span'
@@ -62,6 +64,8 @@ interface SegmentsResult {
 }
 
 const COMMENT_MARKER = '%%';
+const REFERENCE_DEFINITION_PATTERN = /^ {0,3}\[(?<label>(?:[^\\[\]]|\\.){1,999})\]:/u;
+const WARNING_CODES: ReadonlySet<SyntaxIssueCode> = new Set(['duplicate-reference-definition']);
 const ESCAPED_END_PATTERN = /(?:^|[^\\])\\(?:\\\\)*$/u;
 const FENCE_PATTERN = /^ {0,3}(?<marker>`{3,}|~{3,})/u;
 const KEY_LINE_PATTERN = /^[ \t]*[^\s#"'-][^#]*?:(?:[ \t]|$)/u;
@@ -81,6 +85,13 @@ export function findSyntaxIssues(content: string): SyntaxIssue[] {
   }
   issues.push(...findBodyIssues(content, lines.slice(closeLine === null ? 0 : closeLine + 1), locate));
   return issues.sort((left, right) => left.position.start.offset - right.position.start.offset);
+}
+
+/**
+Tells whether a syntax issue is a warning: the note still renders, but part of its text is ignored.
+*/
+export function isWarningSyntaxIssue(issue: SyntaxIssue): boolean {
+  return WARNING_CODES.has(issue.code);
 }
 
 function createLocator(lines: readonly Line[]): (offset: number) => Loc {
@@ -147,6 +158,7 @@ function findBodyIssues(content: string, lines: readonly Line[], locate: (offset
   if (unclosedFence && !isInside(unclosedFence.start, comments)) {
     issues.push(createUnclosedFenceIssue(content, unclosedFence, locate));
   }
+  issues.push(...findDuplicateReferenceDefinitions(content, segments, comments, locate));
   for (const segment of segments) {
     for (const span of segment.unclosedCodeSpans) {
       if (isInside(span.start, comments)) {
@@ -199,6 +211,51 @@ function findClosingQuote(text: string, from: number, quote: string): number {
   return -1;
 }
 
+/**
+Reports a reference definition whose label an earlier definition already took. Labels match case-insensitively with
+whitespace collapsed, and the first definition wins, so this one is silently ignored (verified live on 1.15.1). A
+definition can only open a paragraph, and definitions can follow one another, so each paragraph is read from its start
+until its first line that is not a definition.
+
+The idea comes from `Cairn Vault Linter` (https://github.com/tutivsoft-com/tool-app-Obsidian-Cairn-Vault-Linter, MIT),
+which reports duplicate references; no code is copied from it.
+*/
+function findDuplicateReferenceDefinitions(
+  content: string,
+  segments: readonly Segment[],
+  comments: readonly Range[],
+  locate: (offset: number) => Loc
+): SyntaxIssue[] {
+  const issues: SyntaxIssue[] = [];
+  const firstLines = new Map<string, number>();
+  for (const segment of segments) {
+    let lineStart = segment.start;
+    for (const rawLine of content.slice(segment.start, segment.end).split('\n')) {
+      const text = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine;
+      const match = REFERENCE_DEFINITION_PATTERN.exec(text);
+      const label = match?.groups?.['label'];
+      if (!match || label === undefined || label.startsWith('^') || !label.trim() || !text.slice(match[0].length).trim() || isInside(lineStart, comments)) {
+        break;
+      }
+      const key = label.trim().replaceAll(/\s+/gu, ' ').toUpperCase().toLowerCase();
+      const firstLine = firstLines.get(key);
+      const position = { end: locate(lineStart + text.length), start: locate(lineStart + text.indexOf('[')) };
+      if (firstLine === undefined) {
+        firstLines.set(key, position.start.line + 1);
+      } else {
+        issues.push({
+          code: 'duplicate-reference-definition',
+          fix: null,
+          message: `The reference [${label}] is already defined on line ${String(firstLine)}, so this definition is ignored and its links use the first one.`,
+          position
+        });
+      }
+      lineStart += rawLine.length + 1;
+    }
+  }
+  return issues;
+}
+
 function findFrontmatterCloseLine(lines: readonly Line[]): null | number {
   if (lines[0]?.text.trimEnd() !== '---') {
     return null;
@@ -219,13 +276,24 @@ function findFrontmatterIssues(content: string, lines: readonly Line[], locate: 
     return quoteIssues;
   }
   const yamlText = content.slice(first.start, last.end);
-  const error = parseDocument(yamlText, { prettyErrors: false, uniqueKeys: false }).errors[0];
+  // Obsidian parses frontmatter with the same `yaml` package and its default unique keys, so a repeated key rejects the
+  // whole block: no property applies and the Properties panel shows "Invalid properties" (verified live on 1.15.1).
+  const error = parseDocument(yamlText, { prettyErrors: false }).errors[0];
   if (!error) {
     return [];
   }
   const start = first.start + Math.min(error.pos[0], yamlText.length);
   // Keep the range at least one character wide where the text allows, so the editor can underline it.
   const end = Math.max(first.start + Math.min(error.pos[1], yamlText.length), Math.min(start + 1, last.end));
+  if (error.code === 'DUPLICATE_KEY') {
+    const key = /^(?<key>[^:\r\n]*?)[ \t]*:/u.exec(content.slice(start, last.end))?.groups?.['key'];
+    return [{
+      code: 'duplicate-frontmatter-key',
+      fix: null,
+      message: `The key ${key ? `"${key}" ` : ''}appears more than once, so Obsidian rejects the frontmatter and none of its properties apply.`,
+      position: { end: locate(end), start: locate(start) }
+    }];
+  }
   return [{
     code: 'frontmatter-parse-error',
     fix: null,
