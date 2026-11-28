@@ -157,6 +157,10 @@ export class Plugin extends PluginBase {
     this.pathCompatibilityComponent?.refresh();
   }
 
+  public showMessage(message: string): void {
+    this.pluginNoticeComponent.showNotice(message);
+  }
+
   public showProblemError(error: unknown): void {
     this.pluginNoticeComponent.showNotice(String(error));
   }

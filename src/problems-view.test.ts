@@ -20,12 +20,23 @@ import {
 } from 'vitest';
 
 import type { LinkProblem } from './link-model.ts';
+import type { UnambiguousFixPlan } from './problem-fixes.ts';
 
 import { Plugin } from './plugin.ts';
 import {
+  FIX_PREVIEW_LIMIT,
   PROBLEMS_PAGE_SIZE,
   ProblemsView
 } from './problems-view.ts';
+
+interface ConfirmCall {
+  readonly message: DocumentFragment | string;
+  readonly okButtonText?: string;
+}
+
+const checkConfirmed = vi.hoisted(() => vi.fn<(params: ConfirmCall) => Promise<boolean>>());
+
+vi.mock('@mnaoumov/obsidian-lib/modals/confirm', () => ({ confirm: checkConfirmed }));
 
 const manifest: PluginManifest = { author: 'test', description: 'test', id: 'vault-problems', minAppVersion: '1.14.5', name: 'Vault Problems', version: '0.0.0' };
 
@@ -305,6 +316,72 @@ describe('Problems panel', () => {
     command?.callback?.();
     await settle();
     view.unload();
+    plugin.unload();
+  });
+});
+
+describe('Fix all unambiguous', () => {
+  function clickFixAll(view: ProblemsView): void {
+    ensureNonNullable(view.contentEl.querySelector<HTMLButtonElement>('.vault-problems-fix-all')).click();
+  }
+
+  it('plans over every shown problem, previews the plan and applies it once confirmed', async () => {
+    const { plugin, problem, problems, view } = await fixture();
+    const hidden: LinkProblem = { ...problem, row: { ...problem.row, id: '2', sourcePath: 'Elsewhere/Other.md' } };
+    problems.push(hidden);
+    const fixes = ensureNonNullable(plugin.problemFixes);
+    const plan: UnambiguousFixPlan = { edits: [{ after: '[[Found|Caption]]', before: '[[Missing|Caption]]', path: problem.row.sourcePath }], fixes: [{ label: 'Use Found.md', problem }] };
+    const planFixes = vi.spyOn(fixes, 'planUnambiguousFixes').mockResolvedValue(plan);
+    const apply = vi.spyOn(fixes, 'applyPlan').mockResolvedValue();
+    const folder = ensureNonNullable(view.contentEl.querySelector('input'));
+    folder.value = 'Folder';
+    folder.dispatchEvent(new Event('input'));
+    checkConfirmed.mockResolvedValueOnce(false);
+    clickFixAll(view);
+    await settle();
+    expect(planFixes).toHaveBeenCalledWith([problem]);
+    const params = ensureNonNullable(checkConfirmed.mock.calls[0])[0];
+    expect(params.okButtonText).toBe('Apply 1 fix(es)');
+    const preview = document.createElement('div');
+    preview.append(params.message);
+    expect(preview.textContent).toContain('1 fix(es) in 1 note(s). 0 shown problem(s) need a choice');
+    expect(preview.textContent).toContain('Folder/Source.md, Line 1: Use Found.md');
+    expect(apply).not.toHaveBeenCalled();
+    checkConfirmed.mockResolvedValueOnce(true);
+    clickFixAll(view);
+    await settle();
+    expect(apply).toHaveBeenCalledWith(plan);
+    plugin.unload();
+  });
+
+  it('says when nothing has exactly one fix, lists only the first fixes of a long plan, and reports errors', async () => {
+    const { plugin, problem, view } = await fixture();
+    const fixes = ensureNonNullable(plugin.problemFixes);
+    const message = vi.spyOn(plugin, 'showMessage');
+    const error = vi.spyOn(plugin, 'showProblemError');
+    const planFixes = vi.spyOn(fixes, 'planUnambiguousFixes').mockResolvedValue({ edits: [], fixes: [] });
+    checkConfirmed.mockClear();
+    clickFixAll(view);
+    await settle();
+    expect(message).toHaveBeenCalledWith('No shown problem has exactly one quick fix: choose each fix by hand.');
+    expect(checkConfirmed).not.toHaveBeenCalled();
+    planFixes.mockResolvedValue({ edits: [], fixes: Array.from({ length: FIX_PREVIEW_LIMIT + 2 }, (_value, index) => ({ label: `Fix ${String(index)}`, problem })) });
+    checkConfirmed.mockResolvedValueOnce(false);
+    clickFixAll(view);
+    await settle();
+    const preview = document.createElement('div');
+    preview.append(ensureNonNullable(checkConfirmed.mock.calls[0])[0].message);
+    expect(preview.querySelectorAll('li')).toHaveLength(FIX_PREVIEW_LIMIT);
+    expect(preview.textContent).toContain('And 2 more.');
+    planFixes.mockRejectedValue(new Error('Cannot plan'));
+    clickFixAll(view);
+    await settle();
+    expect(error).toHaveBeenCalledWith(new Error('Cannot plan'));
+    expect(ensureNonNullable(view.contentEl.querySelector<HTMLButtonElement>('.vault-problems-fix-all')).disabled).toBe(false);
+    plugin.problemFixes = null;
+    clickFixAll(view);
+    await settle();
+    expect(planFixes).toHaveBeenCalledTimes(3);
     plugin.unload();
   });
 });

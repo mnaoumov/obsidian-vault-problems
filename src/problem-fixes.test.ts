@@ -1,4 +1,4 @@
-// Cspell:ignore Instalation -- a deliberate misspelling of a heading
+// Cspell:ignore Instalation Projet -- deliberate misspellings of a heading and a note name
 import type {
   App as AppOriginal,
   CachedMetadata,
@@ -25,6 +25,7 @@ import type { PathRepairScope } from './problem-fixes.ts';
 import { AutoRepairComponent } from './auto-repair-component.ts';
 import { LinkEngine } from './link-engine.ts';
 import { ProblemFixes } from './problem-fixes.ts';
+import { findSyntaxIssues } from './syntax-checks.ts';
 
 interface Fixture {
   readonly app: AppOriginal;
@@ -288,6 +289,127 @@ describe('Explicit quick fixes', () => {
   });
 });
 
+describe('Fix all unambiguous', () => {
+  it('fixes a single-candidate link and a syntax issue in one note as one edit with one undo', async () => {
+    const content = '---\ntitle: "open\ntags: [a]\n---\n\n[[Missing|Label]]\n';
+    const { app, caches, engine, notify, service, source } = await fixture(content);
+    const renamed = await app.vault.create('Renamed.md', '');
+    caches.set(renamed.path, { frontmatter: { aliases: ['Missing'] } });
+    const plan = await service.planUnambiguousFixes([...engine.getAllProblems(), syntaxProblem(source.path, content)]);
+    expect(plan.fixes.map((fix) => fix.label)).toEqual(['Close the quote at the end of line 2', expect.stringMatching(/^Use Renamed\.md/u)]);
+    expect(plan.edits).toHaveLength(1);
+    expect(await app.vault.read(source)).toBe(content);
+    await service.applyPlan(plan);
+    expect(await app.vault.read(source)).toBe('---\ntitle: "open"\ntags: [a]\n---\n\n[[Renamed|Label]]\n');
+    expect(notify).toHaveBeenCalledOnce();
+    expect(ensureNonNullable(notify.mock.calls[0])[0]).toBe('Applied 2 quick fix(es) in 1 note(s)');
+    await ensureNonNullable(notify.mock.calls[0])[1]();
+    expect(await app.vault.read(source)).toBe(content);
+  });
+
+  it('leaves links with several candidates, only a near-miss name, or no candidate', async () => {
+    const { app, caches, engine, notify, service, source } = await fixture('[[Missing|A]] [[Planned]] [[Projet]]');
+    const renamed = await app.vault.create('Renamed.md', '');
+    caches.set(renamed.path, { frontmatter: { aliases: ['Missing'] } });
+    const alternative = await app.vault.create('Alternative.md', '');
+    caches.set(alternative.path, { frontmatter: { title: 'Missing' } });
+    await app.vault.create('Project.md', '');
+    const plan = await service.planUnambiguousFixes(engine.getAllProblems());
+    expect(plan).toEqual({ edits: [], fixes: [] });
+    await service.applyPlan(plan);
+    expect(notify).not.toHaveBeenCalled();
+    expect(await app.vault.read(source)).toBe('[[Missing|A]] [[Planned]] [[Projet]]');
+  });
+
+  it('points a fragment link at a heading only when one heading of the note is close', async () => {
+    const { app, caches, engine, service, source } = await fixture('[[Missing#Instalation]] [[Missing#Gone]]');
+    const content = '# Overview\n# Installation\n';
+    const target = await app.vault.create('Missing.md', content);
+    caches.set(target.path, metadata(content));
+    const problems = engine.getAllProblems().map((problem) => ({ ...problem, row: { ...problem.row, targetPath: target.path } }));
+    const plan = await service.planUnambiguousFixes(problems);
+    expect(plan.fixes.map((fix) => fix.label)).toEqual(['Use Missing.md#Installation']);
+    await service.applyPlan(plan);
+    expect(await app.vault.read(source)).toBe('[[Missing#Installation]] [[Missing#Gone]]');
+  });
+
+  it('refuses a plan whose note changed since it was made', async () => {
+    const { app, caches, engine, notify, service, source } = await fixture();
+    const renamed = await app.vault.create('Renamed.md', '');
+    caches.set(renamed.path, { frontmatter: { aliases: ['Missing'] } });
+    const plan = await service.planUnambiguousFixes(engine.getAllProblems());
+    expect(plan.fixes).toHaveLength(1);
+    await app.vault.modify(source, 'Typed since [[Missing|Label]]\n');
+    await expect(service.applyPlan(plan)).rejects.toThrow();
+    expect(await app.vault.read(source)).toBe('Typed since [[Missing|Label]]\n');
+    expect(notify).not.toHaveBeenCalled();
+  });
+
+  it('skips problems that are not content repairs, and a syntax fix no longer in the text', async () => {
+    const content = '---\ntitle: "open\ntags: [a]\n---\n\n[[Missing]]\n';
+    const { app, problem, service, source } = await fixture(content);
+    const stale = syntaxProblem(source.path, content);
+    await app.vault.modify(source, '---\ntitle: "closed"\ntags: [a]\n---\n\n[[Missing]]\n');
+    const plan = await service.planUnambiguousFixes([
+      stale,
+      { ...problem, html: castTo({}) },
+      { ...problem, row: { ...problem.row, kind: 'path' } },
+      { ...problem, row: { ...problem.row, link: 'Missing#Heading', targetPath: 'Absent.md' } },
+      { ...problem, row: { ...problem.row, link: '../outside' } },
+      { ...stale, syntax: { ...ensureNonNullable(stale.syntax), fix: null } },
+      { ...stale, row: { ...stale.row, sourcePath: 'Deleted.md' } }
+    ]);
+    expect(plan.fixes).toEqual([]);
+  });
+
+  it('fixes frontmatter and body links of one note in document order, skipping a candidate without the fragment', async () => {
+    const content = '---\nrelated: "[[Missing]]"\n---\n\n[[Missing|Body]] [[Missing#Part]]\n';
+    const { app, caches, engine, service, source } = await fixture(content);
+    const renamed = await app.vault.create('Renamed.md', '');
+    caches.set(renamed.path, { frontmatter: { aliases: ['Missing'] } });
+    const stale = syntaxProblem(source.path, '---\ntitle: "x\ntags: [a]\n---\n');
+    const plan = await service.planUnambiguousFixes([...[...engine.getAllProblems()].reverse(), stale]);
+    expect(plan.fixes.map((fix) => fix.problem.row.kind)).toEqual(['frontmatter', 'link']);
+    await service.applyPlan(plan);
+    expect(await app.vault.read(source)).toBe('---\nrelated: "[[Renamed]]"\n---\n\n[[Renamed|Body]] [[Missing#Part]]\n');
+  });
+
+  it('reads a note with no metadata cache as having no headings, blocks or fragments', async () => {
+    const { app, engine, service } = await fixture('[[Missing#Part]]');
+    const renamed = await app.vault.create('Renamed.md', '# Part');
+    const [problem] = engine.getAllProblems();
+    vi.spyOn(app.metadataCache, 'getFileCache').mockReturnValue(null);
+    const plan = await service.planUnambiguousFixes([
+      { ...ensureNonNullable(problem), cause: { kind: 'rename', oldPath: 'Missing.md', path: renamed.path } },
+      { ...ensureNonNullable(problem), row: { ...ensureNonNullable(problem).row, targetPath: renamed.path } }
+    ]);
+    expect(plan.fixes).toEqual([]);
+  });
+
+  it('takes the rename that broke a link as its candidate, unless two renames of one path disagree', async () => {
+    const { app, engine, service, source } = await fixture('[[Old|A]] [[Gone|B]] [[Twice|C]]');
+    for (const path of ['New.md', 'Moved.md', 'First.md', 'Second.md']) {
+      await app.vault.create(path, '');
+    }
+    const byLink = new Map(engine.getAllProblems().map((problem) => [problem.row.link, problem]));
+    const twice = ensureNonNullable(byLink.get('Twice'));
+    const plan = await service.planUnambiguousFixes([
+      { ...ensureNonNullable(byLink.get('Old')), cause: { kind: 'rename', oldPath: 'Old.md', path: 'New.md' } },
+      { ...ensureNonNullable(byLink.get('Gone')), cause: { changes: [{ kind: 'changed', path: 'Other.md' }, { kind: 'rename', path: 'Unknown.md' }, { kind: 'rename', oldPath: 'Gone.md', path: 'Moved.md' }], kind: 'batch', path: '' } },
+      { ...twice, cause: { kind: 'rename', oldPath: 'Twice.md', path: 'First.md' } },
+      { ...twice, cause: { kind: 'rename', oldPath: 'Twice.md', path: 'Second.md' } },
+      { ...twice, cause: { kind: 'batch', path: '' } }
+    ]);
+    await service.applyPlan(plan);
+    expect(await app.vault.read(source)).toBe('[[New|A]] [[Moved|B]] [[Twice|C]]');
+  });
+});
+
 function noPathRules(): PathRepairScope {
   return { forbiddenCharacterReplacement: '-', maxVaultRootPathLength: 0, platforms: [] };
+}
+
+function syntaxProblem(sourcePath: string, content: string): LinkProblem {
+  const issue = ensureNonNullable(findSyntaxIssues(content).find((candidate) => candidate.fix));
+  return { cause: null, message: issue.message, row: { id: `syntax:${sourcePath}`, key: null, kind: 'syntax', link: '', position: issue.position, sourcePath, target: null, targetPath: null }, status: 'standing', syntax: issue };
 }

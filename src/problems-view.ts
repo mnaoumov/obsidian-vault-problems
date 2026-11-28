@@ -1,5 +1,6 @@
 import type { WorkspaceLeaf } from 'obsidian';
 
+import { confirm } from '@mnaoumov/obsidian-lib/modals/confirm';
 import { invokeAsyncSafely } from '@mnaoumov/typescript-lib/async';
 import { noopAsync } from '@mnaoumov/typescript-lib/function';
 import {
@@ -17,6 +18,7 @@ import type {
 import type { MissingTargetClass } from './missing-targets.ts';
 import type { Plugin } from './plugin.ts';
 import type { ProblemGrouping } from './problem-filter.ts';
+import type { UnambiguousFixPlan } from './problem-fixes.ts';
 
 import {
   MISSING_TARGET_CLASS_LABELS,
@@ -45,6 +47,19 @@ Paging bounds the DOM of one render whatever the vault holds: a result the size 
 renders the same few hundred elements as a small one, and the rest is one click away.
 */
 export const PROBLEMS_PAGE_SIZE = 100;
+
+/**
+How many fixes the Fix all preview lists by name before counting the rest.
+*/
+export const FIX_PREVIEW_LIMIT = 50;
+
+/**
+The problems the current filters show, grouped, and the planned-note links they hid.
+*/
+interface ShownGroups {
+  readonly groups: Map<string, LinkProblem[]>;
+  readonly plannedProblems: ReadonlySet<LinkProblem>;
+}
 
 /**
 A live, keyboard-accessible projection of the shared diagnostics snapshot.
@@ -147,6 +162,14 @@ export class ProblemsView extends ItemView {
         this.render();
       });
     }
+    const fixAll = controls.createEl('button', {
+      attr: { 'aria-label': 'Apply the one quick fix of every shown problem that has exactly one, after a preview' },
+      cls: 'vault-problems-fix-all',
+      text: 'Fix all unambiguous'
+    });
+    this.registerDomEvent(fixAll, 'click', () => {
+      invokeAsyncSafely(() => this.fixAllUnambiguous(fixAll));
+    });
     this.listEl = this.contentEl.createDiv({ attr: { 'aria-live': 'polite' } });
     const subscription = this.owner.linkEngine?.onChanged(() => {
       this.render();
@@ -163,12 +186,7 @@ export class ProblemsView extends ItemView {
     if (!list) {
       return;
     }
-    const allProblems = this.owner.getProblems();
-    this.missingTargetClasses = this.missingTargetClassifier.classify(allProblems);
-    const plannedProblems = this.hidePlanned
-      ? new Set([...this.missingTargetClasses].filter(([, missingTargetClass]) => missingTargetClass === 'planned').map(([problem]) => problem))
-      : new Set<LinkProblem>();
-    const groups = groupProblems(allProblems, { folder: this.folder, ignoredPaths: this.owner.ignoredPaths, kind: this.kind, plannedProblems }, this.grouping);
+    const { groups, plannedProblems } = this.getShownGroups();
     this.rows.unload();
     this.rows.load();
     list.empty();
@@ -197,6 +215,50 @@ export class ProblemsView extends ItemView {
     if (groups.size === 0) {
       list.createEl('p', { text: 'No problems match these filters.' });
     }
+  }
+
+  /**
+  Plans the one fix of every problem the filters show (every page, collapsed groups included), previews the plan and
+  applies it as one Undo step once confirmed.
+  */
+  private async fixAllUnambiguous(button: HTMLButtonElement): Promise<void> {
+    const problemFixes = this.owner.problemFixes;
+    if (!problemFixes) {
+      return;
+    }
+    button.disabled = true;
+    try {
+      const problems = [...this.getShownGroups().groups.values()].flat();
+      const plan = await problemFixes.planUnambiguousFixes(problems);
+      if (plan.fixes.length === 0) {
+        this.owner.showMessage('No shown problem has exactly one quick fix: choose each fix by hand.');
+        return;
+      }
+      const isConfirmed = await confirm({
+        app: this.app,
+        cssClasses: ['vault-problems-fix-all-preview'],
+        message: renderFixPreview(plan, problems.length),
+        okButtonText: `Apply ${String(plan.fixes.length)} fix(es)`,
+        title: 'Fix all unambiguous problems'
+      });
+      if (isConfirmed) {
+        await problemFixes.applyPlan(plan);
+      }
+    } catch (error) {
+      this.owner.showProblemError(error);
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  private getShownGroups(): ShownGroups {
+    const allProblems = this.owner.getProblems();
+    this.missingTargetClasses = this.missingTargetClassifier.classify(allProblems);
+    const plannedProblems = this.hidePlanned
+      ? new Set([...this.missingTargetClasses].filter(([, missingTargetClass]) => missingTargetClass === 'planned').map(([problem]) => problem))
+      : new Set<LinkProblem>();
+    const groups = groupProblems(allProblems, { folder: this.folder, ignoredPaths: this.owner.ignoredPaths, kind: this.kind, plannedProblems }, this.grouping);
+    return { groups, plannedProblems };
   }
 
   private async openProblem(problem: LinkProblem): Promise<void> {
@@ -334,4 +396,23 @@ function describeLocation(row: LinkRow): string {
       return `Property ${row.key ?? ''}`;
     }
   }
+}
+
+/**
+The preview of a batch fix: what it changes, line by line, and how many shown problems it leaves for an explicit choice.
+*/
+function renderFixPreview(plan: UnambiguousFixPlan, shownCount: number): DocumentFragment {
+  const fragment = createFragment();
+  const left = shownCount - plan.fixes.length;
+  fragment.createEl('p', {
+    text: `${String(plan.fixes.length)} fix(es) in ${String(plan.edits.length)} note(s). ${String(left)} shown problem(s) need a choice and are left as they are. One Undo reverts every note.`
+  });
+  const list = fragment.createEl('ol', { cls: 'vault-problems-fix-all-list' });
+  for (const fix of plan.fixes.slice(0, FIX_PREVIEW_LIMIT)) {
+    list.createEl('li', { text: `${fix.problem.row.sourcePath}, ${describeLocation(fix.problem.row)}: ${fix.label}` });
+  }
+  if (plan.fixes.length > FIX_PREVIEW_LIMIT) {
+    fragment.createEl('p', { text: `And ${String(plan.fixes.length - FIX_PREVIEW_LIMIT)} more.` });
+  }
+  return fragment;
 }

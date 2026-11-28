@@ -1,10 +1,14 @@
+import type { GitRename } from '@mnaoumov/obsidian-lib/broken-link-candidates';
 import type {
   App,
   Reference,
   TFile
 } from 'obsidian';
 
-import { BrokenLinkCandidateFinder } from '@mnaoumov/obsidian-lib/broken-link-candidates';
+import {
+  BrokenLinkCandidateFinder,
+  BrokenLinkEvidenceKind
+} from '@mnaoumov/obsidian-lib/broken-link-candidates';
 import {
   isFile,
   isFolder
@@ -38,14 +42,21 @@ import type {
   RepairFileEdit
 } from './auto-repair-component.ts';
 import type {
+  LinkChange,
   LinkProblem,
   LinkRow,
   MisplacedAttachment
 } from './link-model.ts';
 import type { PathCompatibilityScope } from './path-compatibility-component.ts';
-import type { SyntaxIssue } from './syntax-checks.ts';
+import type {
+  SyntaxFix,
+  SyntaxIssue
+} from './syntax-checks.ts';
 
-import { rankFragmentCandidates } from './fragment-candidates.ts';
+import {
+  findUnambiguousFragment,
+  rankFragmentCandidates
+} from './fragment-candidates.ts';
 import {
   decodeLink,
   getMissingPath,
@@ -66,6 +77,14 @@ export interface PathRepairScope extends PathCompatibilityScope {
   What each forbidden character is replaced with; empty deletes it.
   */
   readonly forbiddenCharacterReplacement: string;
+}
+
+/**
+One problem's repair in a batch, as the preview names it.
+*/
+export interface PlannedFix {
+  readonly label: string;
+  readonly problem: LinkProblem;
 }
 
 /**
@@ -90,9 +109,48 @@ export interface ProblemFixesConstructorParams {
   readonly repairs: AutoRepairComponent;
 }
 
+/**
+The repairs of every problem that has exactly one, ready to write as one Undo step.
+*/
+export interface UnambiguousFixPlan {
+  /**
+  One compare-and-swap edit per note.
+  */
+  readonly edits: readonly RepairFileEdit[];
+  /**
+  The fixes those edits carry, in note order.
+  */
+  readonly fixes: readonly PlannedFix[];
+}
+
+type FixIntent = RetargetIntent | SyntaxIntent;
+
 interface FixTarget {
   readonly path: string;
   readonly subpath: string;
+}
+
+interface RetargetIntent {
+  readonly kind: 'retarget';
+  readonly label: string;
+  readonly problem: LinkProblem;
+  readonly target: FixTarget;
+}
+
+interface RowSelection {
+  readonly row: LinkRow;
+  /**
+  Where the link should point; none removes the link and keeps its text.
+  */
+  readonly target?: FixTarget;
+}
+
+interface SyntaxIntent {
+  readonly fix: SyntaxFix;
+  readonly issue: SyntaxIssue;
+  readonly kind: 'syntax';
+  readonly label: string;
+  readonly problem: LinkProblem;
 }
 
 /**
@@ -103,6 +161,21 @@ export class ProblemFixes {
 
   public constructor(params: ProblemFixesConstructorParams) {
     this.params = params;
+  }
+
+  /**
+  Writes a plan made by {@link planUnambiguousFixes} as one repair journal entry, with one notice and one Undo.
+
+  Each note is written only if it still holds the content the plan was made from, so nothing typed since is lost.
+
+  @param plan - The plan.
+  */
+  public async applyPlan(plan: UnambiguousFixPlan): Promise<void> {
+    if (plan.edits.length === 0) {
+      return;
+    }
+    await this.params.repairs.applyEdits(plan.edits);
+    this.params.notify(`Applied ${String(plan.fixes.length)} quick fix(es) in ${String(plan.edits.length)} note(s)`, () => this.params.repairs.undo(plan.edits));
   }
 
   public async getFixes(problem: LinkProblem): Promise<ProblemFix[]> {
@@ -134,6 +207,90 @@ export class ProblemFixes {
     }
     fixes.push({ label: 'Remove link, keep text', run: () => this.rewrite([row]) });
     return fixes;
+  }
+
+  /**
+  Plans the one repair of every given problem that has exactly one, without writing anything.
+
+  A problem qualifies when its repair is a content edit with no choice to make: a link to a missing file with exactly
+  one candidate whose evidence is stronger than a near-miss name, a link to a missing heading or block with exactly one
+  close match of its kind in the target note ({@link findUnambiguousFragment}), or a syntax issue that carries its fix.
+  File renames, attachment moves and plugin list changes are never batched, and neither is anything with several
+  candidates; those stay in the Problems view for an explicit choice.
+
+  @param problems - The problems to consider, such as those the Problems view shows.
+  @returns One edit per note, and the fixes they carry.
+  */
+  public async planUnambiguousFixes(problems: readonly LinkProblem[]): Promise<UnambiguousFixPlan> {
+    const { app } = this.params;
+    const intents: FixIntent[] = [];
+    const fileProblems: LinkProblem[] = [];
+    for (const problem of problems) {
+      if (problem.syntax) {
+        if (problem.syntax.fix) {
+          intents.push({ fix: problem.syntax.fix, issue: problem.syntax, kind: 'syntax', label: problem.syntax.fix.label, problem });
+        }
+        continue;
+      }
+      if (!LINK_ROW_KINDS.has(problem.row.kind) || problem.html || problem.misplacedAttachment || problem.pathViolation) {
+        continue;
+      }
+      const { row } = problem;
+      const { subpath } = parseLinktext(decodeLink(row.link));
+      const target = row.targetPath && app.vault.getFileByPath(row.targetPath);
+      if (target) {
+        const cache = app.metadataCache.getFileCache(target) ?? {};
+        // The candidate is one of the note's own headings or blocks, so it resolves.
+        const fragment = findUnambiguousFragment(subpath, (cache.headings ?? []).map((heading) => heading.heading), Object.keys(cache.blocks ?? {}));
+        if (fragment) {
+          intents.push({ kind: 'retarget', label: `Use ${target.path}${fragment}`, problem, target: { path: target.path, subpath: fragment } });
+        }
+      } else if (getMissingPath(row)) {
+        fileProblems.push(problem);
+      }
+    }
+    intents.push(...await this.planMissingFileFixes(fileProblems));
+    return this.buildPlan(intents);
+  }
+
+  private async buildPlan(intents: readonly FixIntent[]): Promise<UnambiguousFixPlan> {
+    const { app } = this.params;
+    const edits: RepairFileEdit[] = [];
+    const fixes: PlannedFix[] = [];
+    for (const path of new Set(intents.map((intent) => intent.problem.row.sourcePath))) {
+      const file = app.vault.getFileByPath(path);
+      // A note deleted since its problem was found has nothing left to fix.
+      if (!file) {
+        continue;
+      }
+      const before = ensureNonNullable(await readSafe(app, file));
+      // In document order, so the preview reads down the note.
+      const fileIntents = intents.filter((intent) => intent.problem.row.sourcePath === path)
+        .sort((a, b) => getRowOffset(a.problem.row) - getRowOffset(b.problem.row));
+      const applied = new Set<FixIntent>();
+      const selections = new Map<RowSelection, FixIntent>();
+      for (const intent of fileIntents) {
+        if (intent.kind === 'retarget') {
+          selections.set({ row: intent.problem.row, target: intent.target }, intent);
+        }
+      }
+      let after = selections.size > 0
+        ? await this.rewriteContent(file, before, [...selections.keys()], (selection) => {
+          applied.add(ensureNonNullable(selections.get(selection)));
+        })
+        : before;
+      after = applySyntaxFixes(after, fileIntents.filter((intent): intent is SyntaxIntent => intent.kind === 'syntax'), applied);
+      if (after === before) {
+        continue;
+      }
+      edits.push({ after, before, path });
+      for (const intent of fileIntents) {
+        if (applied.has(intent)) {
+          fixes.push({ label: intent.label, problem: intent.problem });
+        }
+      }
+    }
+    return { edits, fixes };
   }
 
   private async commit(edits: readonly RepairFileEdit[]): Promise<void> {
@@ -254,7 +411,7 @@ export class ProblemFixes {
     return fixes;
   }
 
-  private async getGitRenames(): Promise<Map<string, import('@mnaoumov/obsidian-lib/broken-link-candidates').GitRename>> {
+  private async getGitRenames(): Promise<Map<string, GitRename>> {
     const { adapter } = this.params.app.vault;
     if (!Platform.isDesktopApp || !(adapter instanceof FileSystemAdapter)) {
       return new Map();
@@ -346,6 +503,36 @@ export class ProblemFixes {
     });
   }
 
+  /**
+  The links to missing files that have exactly one candidate, found in one pass over the vault.
+  */
+  private async planMissingFileFixes(problems: readonly LinkProblem[]): Promise<FixIntent[]> {
+    if (problems.length === 0) {
+      return [];
+    }
+    const { app } = this.params;
+    const gitRenames = await this.getGitRenames();
+    addCausalRenames(gitRenames, problems);
+    const paths = [...new Set(problems.map((problem) => ensureNonNullable(getMissingPath(problem.row))))];
+    const candidatesByPath = new BrokenLinkCandidateFinder(new MissingTargetClassifier(app).collectSnapshot(gitRenames)).findAll(paths);
+    const intents: FixIntent[] = [];
+    for (const problem of problems) {
+      const candidates = ensureNonNullable(candidatesByPath.get(ensureNonNullable(getMissingPath(problem.row))));
+      const [candidate] = candidates;
+      if (candidates.length !== 1 || !candidate || candidate.evidence.every((evidence) => evidence.kind === BrokenLinkEvidenceKind.NearMiss)) {
+        continue;
+      }
+      const { subpath } = parseLinktext(decodeLink(problem.row.link));
+      const file = ensureNonNullable(app.vault.getFileByPath(candidate.path));
+      // A fragment the candidate does not hold would trade one broken link for another.
+      if (subpath && !resolveSubpath(app.metadataCache.getFileCache(file) ?? {}, subpath)) {
+        continue;
+      }
+      intents.push({ kind: 'retarget', label: `Use ${candidate.path}${subpath} — ${candidate.evidence.map((evidence) => evidence.description).join(' ')}`, problem, target: { path: candidate.path, subpath } });
+    }
+    return intents;
+  }
+
   private async retarget(rows: readonly LinkRow[], path: string, subpath: string): Promise<void> {
     const file = this.params.app.vault.getFileByPath(path);
     if (!file || (subpath && !resolveSubpath(this.params.app.metadataCache.getFileCache(file) ?? {}, subpath))) {
@@ -360,43 +547,8 @@ export class ProblemFixes {
     for (const path of new Set(rows.map((row) => row.sourcePath))) {
       const file = ensureNonNullable(app.vault.getFileByPath(path));
       const before = ensureNonNullable(await readSafe(app, file));
-      const selected = rows.filter((row) => row.sourcePath === path);
-      // Refuse a stale UI row rather than editing a neighboring link after the user types.
-      const originalCache = await parseMetadata(app, before);
-      const selectedDefinitions = (originalCache.referenceLinks ?? []).filter((reference) => selected.some((row) => row.kind === 'reference' && row.link === reference.link && row.position?.start.offset === reference.position.start.offset));
-      // Body links and definitions are rewritten in one pass against the same metadata, so offsets stay consistent.
-      let after = await editReferencesInContent({
-        app,
-        content: before,
-        referenceConverter: (reference) => {
-          if (selected.every((row) => !isMatchingReference(row, reference))) {
-            return;
-          }
-          const parsed = parseLink(reference.original);
-          return target ? generateMarkdownLink({ app, originalLink: reference.original, sourcePathOrFile: file, subpath: target.subpath, targetPathOrFile: target.path, ...(parsed?.alias !== undefined && { alias: parsed.alias }) }) : parsed?.alias ?? reference.link;
-        },
-        referenceDefinitionConverter: (definition) => {
-          const isSelected = selectedDefinitions.some((selectedDefinition) => selectedDefinition.link === definition.link && selectedDefinition.position.start.offset === definition.position.start.offset);
-          if (!target || !isSelected) {
-            return;
-          }
-          const generated = generateMarkdownLink({
-            alias: 'reference',
-            app,
-            linkStyle: LinkStyle.Markdown,
-            originalLink: `[reference](<${definition.link}>)`,
-            sourcePathOrFile: file,
-            subpath: target.subpath,
-            targetPathOrFile: target.path
-          });
-          return encodeUrl(ensureNonNullable(parseLink(generated)).url, true);
-        }
-      });
-      if (!target) {
-        for (const reference of selectedDefinitions) {
-          after = removeReference(after, reference);
-        }
-      }
+      const selections = rows.filter((row) => row.sourcePath === path).map((row): RowSelection => ({ row, ...(target && { target }) }));
+      const after = await this.rewriteContent(file, before, selections);
       if (after !== before) {
         edits.push({ after, before, path });
       }
@@ -406,10 +558,131 @@ export class ProblemFixes {
     }
     await this.commit(edits);
   }
+
+  /**
+  Rewrites the selected links of one note, each to its own target, or removes those with no target, keeping the text.
+
+  @param file - The note.
+  @param before - Its current content.
+  @param selections - Its rows to rewrite.
+  @param onMatched - Told about each selection whose link was found in the content.
+  @returns The rewritten content.
+  */
+  private async rewriteContent(file: TFile, before: string, selections: readonly RowSelection[], onMatched?: (selection: RowSelection) => void): Promise<string> {
+    const { app } = this.params;
+    // Refuse a stale UI row rather than editing a neighboring link after the user types.
+    const originalCache = await parseMetadata(app, before);
+    const definitionSelections = new Map<number, RowSelection>();
+    for (const definition of originalCache.referenceLinks ?? []) {
+      const selection = selections.find(({ row }) => row.kind === 'reference' && row.link === definition.link && row.position?.start.offset === definition.position.start.offset);
+      if (selection) {
+        definitionSelections.set(definition.position.start.offset, selection);
+      }
+    }
+    // Body links and definitions are rewritten in one pass against the same metadata, so offsets stay consistent.
+    let after = await editReferencesInContent({
+      app,
+      content: before,
+      referenceConverter: (reference) => {
+        const selection = selections.find(({ row }) => isMatchingReference(row, reference));
+        if (!selection) {
+          return;
+        }
+        onMatched?.(selection);
+        const { target } = selection;
+        const parsed = parseLink(reference.original);
+        return target ? generateMarkdownLink({ app, originalLink: reference.original, sourcePathOrFile: file, subpath: target.subpath, targetPathOrFile: target.path, ...(parsed?.alias !== undefined && { alias: parsed.alias }) }) : parsed?.alias ?? reference.link;
+      },
+      referenceDefinitionConverter: (definition) => {
+        const selection = definitionSelections.get(definition.position.start.offset);
+        if (selection?.row.link !== definition.link || !selection.target) {
+          return;
+        }
+        onMatched?.(selection);
+        const generated = generateMarkdownLink({
+          alias: 'reference',
+          app,
+          linkStyle: LinkStyle.Markdown,
+          originalLink: `[reference](<${definition.link}>)`,
+          sourcePathOrFile: file,
+          subpath: selection.target.subpath,
+          targetPathOrFile: selection.target.path
+        });
+        return encodeUrl(ensureNonNullable(parseLink(generated)).url, true);
+      }
+    });
+    const removed = (originalCache.referenceLinks ?? []).filter((definition) => {
+      const selection = definitionSelections.get(definition.position.start.offset);
+      return selection?.row.link === definition.link && !selection.target;
+    });
+    for (const reference of removed) {
+      onMatched?.(ensureNonNullable(definitionSelections.get(reference.position.start.offset)));
+      after = removeReference(after, reference);
+    }
+    return after;
+  }
+}
+
+/**
+Adds the renames that broke the given links to the git renames, as the strongest evidence; two different renames of
+one path cancel out, leaving neither.
+*/
+function addCausalRenames(gitRenames: Map<string, GitRename>, problems: readonly LinkProblem[]): void {
+  const causalRenames = new Map<string, null | string>();
+  for (const problem of problems) {
+    for (const change of getCauseChanges(problem)) {
+      if (!(change.kind === 'rename' && change.oldPath)) {
+        continue;
+      }
+
+      const known = causalRenames.get(change.oldPath);
+      causalRenames.set(change.oldPath, known === undefined || known === change.path ? change.path : null);
+    }
+  }
+  for (const [oldPath, newPath] of causalRenames) {
+    if (newPath === null) {
+      gitRenames.delete(oldPath);
+    } else {
+      gitRenames.set(oldPath, { commit: 'the change that broke this link', newPath });
+    }
+  }
+}
+
+/**
+Applies the planned syntax fixes to text that other fixes may already have edited.
+
+Each fix is found again in the current text, by its check, its insertion and its line, so offsets shifted by a link
+rewrite or an earlier insertion never misplace it; a fix no longer found is skipped.
+*/
+function applySyntaxFixes(content: string, intents: readonly SyntaxIntent[], applied: Set<FixIntent>): string {
+  let result = content;
+  for (const intent of intents) {
+    const fix = findSyntaxIssues(result).find((issue) => issue.code === intent.issue.code && issue.fix?.insert === intent.fix.insert && issue.position.start.line === intent.issue.position.start.line)?.fix;
+    if (!fix) {
+      continue;
+    }
+    result = result.slice(0, fix.offset) + fix.insert + result.slice(fix.offset);
+    applied.add(intent);
+  }
+  return result;
+}
+
+function getCauseChanges(problem: LinkProblem): readonly LinkChange[] {
+  if (!problem.cause) {
+    return [];
+  }
+  return problem.cause.kind === 'batch' ? problem.cause.changes ?? [] : [problem.cause];
 }
 
 function getParentPath(path: string): string {
   return path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
+}
+
+/**
+Where a row starts in its note; a frontmatter link has no range and counts as the start.
+*/
+function getRowOffset(row: LinkRow): number {
+  return row.position?.start.offset ?? 0;
 }
 
 function isMatchingReference(row: LinkRow, reference: Reference): boolean {

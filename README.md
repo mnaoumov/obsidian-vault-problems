@@ -52,6 +52,8 @@ Run **`Vault Problems`: Open problems** or select the checklist ribbon icon. The
 
 Each note is one collapsible group headed by its problem count. A note with more than 10 problems starts collapsed, so one noisy note does not push the rest off screen. **Expand all** and **Collapse all** act on every group. Switch **Group by file** to **Group by kind** to see all broken links, embeds, syntax problems and so on together, each row naming its note. Large results are shown 100 groups, and 100 rows per group, at a time, with a **Show more** button, so the panel stays responsive on a vault with tens of thousands of problems.
 
+**Fix all unambiguous** applies, in one step, the one quick fix of every problem the filters show that has exactly one: a link to a missing note with a single candidate stronger than a similar name (a rename, an alias, a title, a case change, a renamed folder, the same name elsewhere), a link to a missing heading or block whose note has exactly one close match, and a frontmatter quote left open. It acts on every shown problem, including collapsed groups and pages not yet shown. A preview lists each fix first, and one **Undo** reverts every note it changed. Problems with several candidates, renames and attachment moves are left for you to choose.
+
 A link to a note or file that does not exist is labelled one of two ways:
 
 1. **Near miss**: a file the link probably meant exists. Its name may be a typo away (`Meeting nots` for `Meeting notes`), differ only in letter case, or match an alias, a title, or the same name in another folder. **Quick fixes** lists those files.
@@ -104,7 +106,7 @@ Each such id is a **Warning** row under the **community-plugin** kind, grouped u
 
 | Plugin | Features | How `Vault Problems` differs |
 | --- | --- | --- |
-| [`Broken Heading Links`](https://community.obsidian.md/plugins/broken-heading-links) | On-demand scan for heading and block links that no longer resolve; suggests the closest heading; Fix and Fix all | Same goal as `Broken Heading Links` for headings and blocks; live instead of on demand; ties each break to its cause; repairs heading edits and moves automatically; adds missing notes, frontmatter and syntax |
+| [`Broken Heading Links`](https://community.obsidian.md/plugins/broken-heading-links) | On-demand scan for heading and block links that no longer resolve; suggests the closest heading; Fix and Fix all | Same goal as `Broken Heading Links` for headings and blocks; live instead of on demand; ties each break to its cause; repairs heading edits and moves automatically; Fix all unambiguous with a preview and one Undo; adds missing notes, frontmatter and syntax |
 | [`Broken Link Cleaner`](https://community.obsidian.md/plugins/broken-link-cleaner) | On-demand scan for broken wikilinks; closest-note suggestion with a confidence threshold; removes selected links in bulk | Same goal as `Broken Link Cleaner`; live instead of on demand; adds headings, blocks, Markdown and frontmatter links, causes and one-step Undo; no bulk removal |
 | [`Broken Links`](https://community.obsidian.md/plugins/broken-links) | Lists links to notes that do not exist | Same goal as `Broken Links`; adds headings, blocks, embeds, frontmatter and reference links; ties each break to its cause; quick fixes |
 | [`Cairn Vault Linter`](https://community.obsidian.md/plugins/cairn-vault-linter) | Offline vault health report: broken links, duplicate references, block ids, dangling stubs | Same goal as `Cairn Vault Linter`; live instead of a report; repairs unambiguous breaks; quick fixes |

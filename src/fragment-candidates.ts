@@ -33,6 +33,35 @@ export function normalizeHeading(text: string): string {
 }
 
 /**
+The least similarity at which a heading or block id is taken as the one a broken fragment link meant, as in
+`Broken Heading Links`.
+*/
+export const MIN_UNAMBIGUOUS_FRAGMENT_SIMILARITY = 0.5;
+
+/**
+The one heading or block a broken fragment link plainly meant, for a repair applied without asking which.
+
+Only candidates of the link's own kind count: a heading for a missing heading, a block id for a missing block id. The
+fragment is unambiguous when exactly one of them is at least {@link MIN_UNAMBIGUOUS_FRAGMENT_SIMILARITY} similar.
+
+@param missingSubpath - The subpath the link asks for, such as `#Old heading` or `#^block-id`.
+@param headings - The note's heading texts, in document order.
+@param blockIds - The note's block ids, in document order.
+@returns The subpath to retarget the link to, or `null` when no candidate or several qualify.
+*/
+export function findUnambiguousFragment(missingSubpath: string, headings: readonly string[], blockIds: readonly string[]): null | string {
+  const isBlock = missingSubpath.startsWith(BLOCK_PREFIX);
+  const wanted = isBlock ? missingSubpath.slice(BLOCK_PREFIX.length) : lastHeadingSegment(missingSubpath);
+  const texts = new Set(isBlock ? blockIds : headings);
+  const matches = [...texts].filter((text) => similarity(wanted, text) >= MIN_UNAMBIGUOUS_FRAGMENT_SIMILARITY);
+  const [match] = matches;
+  if (matches.length !== 1 || match === undefined) {
+    return null;
+  }
+  return isBlock ? `${BLOCK_PREFIX}${match}` : `#${match}`;
+}
+
+/**
 Orders the headings and blocks of a note by how close each is to a missing subpath, closest first, and keeps the first
 {@link MAX_FRAGMENT_CANDIDATES}.
 
