@@ -268,6 +268,30 @@ describe('Problems panel', () => {
     plugin.unload();
   });
 
+  it('labels near misses and planned notes, hides planned notes on request, and re-classifies after a vault change', async () => {
+    const { app, file, plugin, problem, problems, view } = await fixture();
+    problems.push({ ...problem, message: 'Cannot resolve Sources', row: { ...problem.row, id: '2', link: 'Sources', position: { end: { col: 11, line: 1, offset: 31 }, start: { col: 0, line: 1, offset: 20 } } } });
+    // An edit that leaves aliases and titles alone keeps the classes.
+    app.metadataCache.trigger('changed', file, '', {});
+    view.render();
+    function labels(): (null | string)[] {
+      return [...view.contentEl.querySelectorAll('.vault-problems-missing-target')].map((label) => label.textContent);
+    }
+    expect(labels()).toEqual(['Planned note', 'Near miss']);
+    const hidePlanned = ensureNonNullable(view.contentEl.querySelector<HTMLInputElement>(':scope .vault-problems-hide-planned > input'));
+    hidePlanned.checked = true;
+    hidePlanned.dispatchEvent(new Event('change'));
+    expect(labels()).toEqual(['Near miss']);
+    expect(view.contentEl.textContent).toContain('1 problem(s) in 1 file(s), 1 planned note link(s) hidden');
+    await app.vault.create('Missing.md', '');
+    expect(labels()).toEqual(['Near miss', 'Near miss']);
+    hidePlanned.checked = false;
+    hidePlanned.dispatchEvent(new Event('change'));
+    expect(view.contentEl.textContent).not.toContain('hidden');
+    view.unload();
+    plugin.unload();
+  });
+
   it('persists ignore globs without discarding other plugin data and refreshes existing views', async () => {
     const { app, leaf, plugin, view } = await fixture();
     leaf.view = view;

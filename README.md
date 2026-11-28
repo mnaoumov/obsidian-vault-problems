@@ -52,6 +52,13 @@ Run **`Vault Problems`: Open problems** or select the checklist ribbon icon. The
 
 Each note is one collapsible group headed by its problem count. A note with more than 10 problems starts collapsed, so one noisy note does not push the rest off screen. **Expand all** and **Collapse all** act on every group. Switch **Group by file** to **Group by kind** to see all broken links, embeds, syntax problems and so on together, each row naming its note. Large results are shown 100 groups, and 100 rows per group, at a time, with a **Show more** button, so the panel stays responsive on a vault with tens of thousands of problems.
 
+A link to a note or file that does not exist is labelled one of two ways:
+
+1. **Near miss**: a file the link probably meant exists. Its name may be a typo away (`Meeting nots` for `Meeting notes`), differ only in letter case, or match an alias, a title, or the same name in another folder. **Quick fixes** lists those files.
+2. **Planned note**: nothing in the vault is close, so it is most likely a note you have not written yet.
+
+Turn on **Hide planned notes** to keep only the links that are probably broken. This is useful in a vault that holds many intentional links to notes still to be written.
+
 Use the kind and folder filters to narrow the list. **Ignore paths in Problems** in settings accepts one path, folder or glob per line: `Archive`, `**/Drafts/**`, or `Private/*.md`. These filters affect the panel. Reference-style unlinking is unavailable in notes containing `%%` comments; replacement targets remain available.
 
 ## Editor problems

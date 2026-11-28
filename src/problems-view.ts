@@ -14,9 +14,14 @@ import type {
   LinkProblem,
   LinkRow
 } from './link-model.ts';
+import type { MissingTargetClass } from './missing-targets.ts';
 import type { Plugin } from './plugin.ts';
 import type { ProblemGrouping } from './problem-filter.ts';
 
+import {
+  MISSING_TARGET_CLASS_LABELS,
+  MissingTargetClassifier
+} from './missing-targets.ts';
 import {
   groupProblems,
   isWarningProblem,
@@ -56,8 +61,14 @@ export class ProblemsView extends ItemView {
   private folder = '';
   private grouping: ProblemGrouping = 'file';
   private groupLimit = PROBLEMS_PAGE_SIZE;
+  /**
+  Hides links to a missing file with no candidate, so a vault of intentional unresolved links does not bury the breaks.
+  */
+  private hidePlanned = false;
   private kind = '';
   private listEl: HTMLElement | null = null;
+  private missingTargetClasses = new Map<LinkProblem, MissingTargetClass>();
+  private readonly missingTargetClassifier = new MissingTargetClassifier(this.app);
   private readonly rowLimits = new Map<string, number>();
   private readonly rows = this.addChild(new Component());
 
@@ -107,6 +118,27 @@ export class ProblemsView extends ItemView {
       this.groupLimit = PROBLEMS_PAGE_SIZE;
       this.render();
     });
+    const hidePlannedLabel = controls.createEl('label', { cls: 'vault-problems-hide-planned' });
+    const hidePlanned = hidePlannedLabel.createEl('input', { type: 'checkbox' });
+    hidePlanned.checked = this.hidePlanned;
+    hidePlannedLabel.appendText('Hide planned notes');
+    hidePlannedLabel.setAttribute('aria-label', 'Hide links to notes that do not exist yet and have no similar note');
+    this.registerDomEvent(hidePlanned, 'change', () => {
+      this.hidePlanned = hidePlanned.checked;
+      this.groupLimit = PROBLEMS_PAGE_SIZE;
+      this.render();
+    });
+    const classifier = this.missingTargetClassifier;
+    const invalidate = (): void => {
+      classifier.invalidate();
+      this.render();
+    };
+    this.registerEvent(this.app.vault.on('create', invalidate));
+    this.registerEvent(this.app.vault.on('delete', invalidate));
+    this.registerEvent(this.app.vault.on('rename', invalidate));
+    this.registerEvent(this.app.metadataCache.on('changed', (file, _data, cache) => {
+      classifier.onMetadataChanged(file.path, cache.frontmatter);
+    }));
     for (const [text, isExpanded] of [['Expand all', true], ['Collapse all', false]] as const) {
       const button = controls.createEl('button', { cls: 'vault-problems-toggle-all', text });
       this.registerDomEvent(button, 'click', () => {
@@ -131,13 +163,22 @@ export class ProblemsView extends ItemView {
     if (!list) {
       return;
     }
-    const groups = groupProblems(this.owner.getProblems(), { folder: this.folder, ignoredPaths: this.owner.ignoredPaths, kind: this.kind }, this.grouping);
+    const allProblems = this.owner.getProblems();
+    this.missingTargetClasses = this.missingTargetClassifier.classify(allProblems);
+    const plannedProblems = this.hidePlanned
+      ? new Set([...this.missingTargetClasses].filter(([, missingTargetClass]) => missingTargetClass === 'planned').map(([problem]) => problem))
+      : new Set<LinkProblem>();
+    const groups = groupProblems(allProblems, { folder: this.folder, ignoredPaths: this.owner.ignoredPaths, kind: this.kind, plannedProblems }, this.grouping);
     this.rows.unload();
     this.rows.load();
     list.empty();
     const total = [...groups.values()].reduce((count, problems) => count + problems.length, 0);
     const unit = this.grouping === 'kind' ? 'kind(s)' : 'file(s)';
-    list.createEl('p', { cls: 'vault-problems-summary', text: `${String(total)} problem(s) in ${String(groups.size)} ${unit}` });
+    const hiddenCount = plannedProblems.size;
+    list.createEl('p', {
+      cls: 'vault-problems-summary',
+      text: `${String(total)} problem(s) in ${String(groups.size)} ${unit}${hiddenCount > 0 ? `, ${String(hiddenCount)} planned note link(s) hidden` : ''}`
+    });
     const htmlStatus = this.owner.htmlCheckComponent?.statusMessage;
     if (htmlStatus && (this.kind === '' || this.kind === 'html')) {
       list.createEl('p', { cls: 'vault-problems-status', text: htmlStatus });
@@ -214,6 +255,10 @@ export class ProblemsView extends ItemView {
     const location = this.grouping === 'kind' ? `${problem.row.sourcePath}, ${line}` : line;
     // An HTML finding is a candidate from a lexical index, so it is reviewed rather than asserted.
     row.createSpan({ cls: isWarningProblem(problem) ? 'vault-problems-severity is-warning' : 'vault-problems-severity', text: isWarningProblem(problem) ? 'Warning' : 'Error' });
+    const missingTargetClass = this.missingTargetClasses.get(problem);
+    if (missingTargetClass) {
+      row.createSpan({ cls: `vault-problems-missing-target is-${missingTargetClass}`, text: MISSING_TARGET_CLASS_LABELS[missingTargetClass] });
+    }
     const open = row.createEl('button', { cls: 'vault-problems-open', text: `${location}: ${problem.message}` });
     this.rows.registerDomEvent(open, 'click', () => {
       invokeAsyncSafely(() => this.openProblem(problem));

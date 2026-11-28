@@ -28,8 +28,6 @@ import { encodeUrl } from '@mnaoumov/typescript-lib/url';
 import { isReferenceCache } from '@obsidian-typings/obsidian-public-latest/implementations';
 import {
   FileSystemAdapter,
-  normalizePath,
-  parseFrontMatterAliases,
   parseLinktext,
   Platform,
   resolveSubpath
@@ -48,16 +46,17 @@ import type { PathCompatibilityScope } from './path-compatibility-component.ts';
 import type { SyntaxIssue } from './syntax-checks.ts';
 
 import { rankFragmentCandidates } from './fragment-candidates.ts';
+import {
+  decodeLink,
+  getMissingPath,
+  LINK_ROW_KINDS,
+  MissingTargetClassifier
+} from './missing-targets.ts';
 import { removeReference } from './remove-reference.ts';
 import { findSyntaxIssues } from './syntax-checks.ts';
 
 const BLOCK_PREFIX_LENGTH = 2;
 const BLOCK_PREVIEW_LENGTH = 60;
-
-/**
-The row kinds that are references, as opposed to findings about text, names or placement.
-*/
-const LINK_ROW_KINDS = new Set<LinkRow['kind']>(['embed', 'frontmatter', 'link', 'reference']);
 
 /**
 The rules a repaired name is held to, and what replaces each forbidden character.
@@ -201,18 +200,8 @@ export class ProblemFixes {
     const { app } = this.params;
     const { row } = problem;
     const fixes: ProblemFix[] = [];
-    const path = missingPath(row);
+    const path = getMissingPath(row);
     if (path) {
-      const aliasesByPath = new Map<string, readonly string[]>();
-      const titlesByPath = new Map<string, string>();
-      for (const note of app.vault.getMarkdownFiles()) {
-        const frontmatter = app.metadataCache.getFileCache(note)?.frontmatter;
-        aliasesByPath.set(note.path, parseFrontMatterAliases(frontmatter) ?? []);
-        const title: unknown = frontmatter?.['title'];
-        if (typeof title === 'string') {
-          titlesByPath.set(note.path, title);
-        }
-      }
       const gitRenames = await this.getGitRenames();
       // A live rename is stronger evidence than historical name similarity.
       for (const change of problem.cause?.kind === 'batch' ? problem.cause.changes ?? [] : (problem.cause ? [problem.cause] : [])) {
@@ -220,10 +209,10 @@ export class ProblemFixes {
           gitRenames.set(path, { commit: 'the change that broke this link', newPath: change.path });
         }
       }
-      const candidates = ensureNonNullable(new BrokenLinkCandidateFinder({ aliasesByPath, filePaths: app.vault.getFiles().map((file) => file.path), folderNoteFileNames: ['!.md', 'index.md'], gitRenames, titlesByPath }).findAll([path]).get(path));
+      const candidates = ensureNonNullable(new BrokenLinkCandidateFinder(new MissingTargetClassifier(app).collectSnapshot(gitRenames)).findAll([path]).get(path));
       for (const candidate of candidates) {
         fixes.push({ label: `Use ${candidate.path} — ${candidate.evidence.map((evidence) => evidence.description).join(' ')}`, run: () => this.retarget([row], candidate.path, subpath) });
-        const related = this.params.getProblems().filter((other) => LINK_ROW_KINDS.has(other.row.kind) && missingPath(other.row) === path && parseLinktext(decodeLink(other.row.link)).subpath === subpath).map((other) => other.row);
+        const related = this.params.getProblems().filter((other) => LINK_ROW_KINDS.has(other.row.kind) && getMissingPath(other.row) === path && parseLinktext(decodeLink(other.row.link)).subpath === subpath).map((other) => other.row);
         if (related.length > 1) {
           fixes.push({ label: `Update ${String(related.length)} links to ${candidate.path}${subpath}`, run: () => this.retarget(related, candidate.path, subpath) });
         }
@@ -419,14 +408,6 @@ export class ProblemFixes {
   }
 }
 
-function decodeLink(link: string): string {
-  try {
-    return decodeURI(link);
-  } catch {
-    return link;
-  }
-}
-
 function getParentPath(path: string): string {
   return path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
 }
@@ -437,25 +418,4 @@ function isMatchingReference(row: LinkRow, reference: Reference): boolean {
 
 function isMissingCommunityPlugin(app: App, id: string): boolean {
   return app.plugins.enabledPlugins.has(id) && !Object.hasOwn(app.plugins.manifests, id);
-}
-
-function missingPath(row: LinkRow): null | string {
-  const { path } = parseLinktext(decodeLink(row.link));
-  if (!path || /[:*?"<>|\p{Cc}]/u.test(path)) {
-    return null;
-  }
-  const base = path.startsWith('./') || path.startsWith('../') ? row.sourcePath.slice(0, row.sourcePath.lastIndexOf('/') + 1) : '';
-  const parts: string[] = [];
-  for (const part of (base + path).split('/')) {
-    if (part === '..') {
-      if (parts.length === 0) {
-        return null;
-      }
-      parts.pop();
-    } else if (part && part !== '.') {
-      parts.push(part);
-    }
-  }
-  const result = normalizePath(parts.join('/'));
-  return /\.[^/]+$/u.test(result) ? result : `${result}.md`;
 }

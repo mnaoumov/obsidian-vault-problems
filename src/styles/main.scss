@@ -92,6 +92,27 @@
   }
 }
 
+.vault-problems-missing-target {
+  padding: 0 var(--size-4-2);
+  border-radius: var(--radius-l);
+  background-color: var(--background-modifier-hover);
+  font-size: var(--font-smallest);
+
+  &.is-near-miss {
+    color: var(--text-accent);
+  }
+
+  &.is-planned {
+    color: var(--text-muted);
+  }
+}
+
+.vault-problems-hide-planned {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-1);
+}
+
 .vault-problems-status {
   color: var(--text-muted);
   font-size: var(--font-ui-small);
