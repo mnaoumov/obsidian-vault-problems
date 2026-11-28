@@ -6,6 +6,7 @@ import {
 } from 'vitest';
 
 import {
+  findUnambiguousFragment,
   MAX_FRAGMENT_CANDIDATES,
   normalizeHeading,
   rankFragmentCandidates,
@@ -64,5 +65,19 @@ describe('rankFragmentCandidates', () => {
     const ranked = rankFragmentCandidates('#Heading 14', headings, []);
     expect(ranked).toHaveLength(MAX_FRAGMENT_CANDIDATES);
     expect(ranked[0]).toBe('#Heading 14');
+  });
+});
+
+describe('findUnambiguousFragment', () => {
+  it('picks the one close heading, and gives up on none or several', () => {
+    expect(findUnambiguousFragment('#Instalation', ['Overview', 'Installation'], [])).toBe('#Installation');
+    expect(findUnambiguousFragment('#Gone', ['Overview', 'Installation'], [])).toBeNull();
+    expect(findUnambiguousFragment('#Instal', ['Install', 'Installs'], [])).toBeNull();
+  });
+
+  it('counts a repeated heading once, and compares block ids only with block ids', () => {
+    expect(findUnambiguousFragment('#Note', ['Notes', 'Notes'], [])).toBe('#Notes');
+    expect(findUnambiguousFragment('#^abc123', ['abc124'], ['abc124'])).toBe('#^abc124');
+    expect(findUnambiguousFragment('#^abc123', ['abc124'], [])).toBeNull();
   });
 });
