@@ -1,5 +1,7 @@
 import type { LinkProblem } from './link-model.ts';
 
+import { isWarningSyntaxIssue } from './syntax-checks.ts';
+
 /**
 View filters also provide the shared path exclusion policy for diagnostics consumers.
 */
@@ -105,5 +107,5 @@ Whether a problem is a candidate to review rather than a break: an HTML finding 
 misplaced attachment still resolves, and an enabled id with no plugin may be one still syncing to this device.
 */
 export function isWarningProblem(problem: LinkProblem): boolean {
-  return Boolean(problem.html ?? problem.misplacedAttachment ?? problem.missingCommunityPluginId);
+  return Boolean(problem.html ?? problem.misplacedAttachment ?? problem.missingCommunityPluginId) || (problem.syntax !== undefined && isWarningSyntaxIssue(problem.syntax));
 }

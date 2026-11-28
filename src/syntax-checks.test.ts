@@ -4,7 +4,10 @@ import {
   it
 } from 'vitest';
 
-import { findSyntaxIssues } from './syntax-checks.ts';
+import {
+  findSyntaxIssues,
+  isWarningSyntaxIssue
+} from './syntax-checks.ts';
 
 function applyFix(content: string): string {
   const fix = findSyntaxIssues(content)[0]?.fix;
@@ -53,8 +56,51 @@ describe('findSyntaxIssues', () => {
     expect(issue?.fix).toBeNull();
   });
 
-  it('accepts duplicate keys, which Obsidian tolerates', () => {
-    expect(codes('---\na: 1\na: 2\n---\n')).toEqual([]);
+  it('reports a duplicate frontmatter key at its second occurrence, since Obsidian then rejects the frontmatter', () => {
+    const issues = findSyntaxIssues('---\na: 1\nb: 2\na: 3\n---\n');
+    expect(issues.map((issue) => issue.code)).toEqual(['duplicate-frontmatter-key']);
+    expect(issues[0]?.position.start).toEqual({ col: 0, line: 3, offset: 14 });
+    expect(issues[0]?.message).toBe('The key "a" appears more than once, so Obsidian rejects the frontmatter and none of its properties apply.');
+    expect(issues[0]?.fix).toBeNull();
+    expect(issues[0] && isWarningSyntaxIssue(issues[0])).toBe(false);
+  });
+
+  it('reports a duplicate key in a nested map, and accepts the same key in sibling maps', () => {
+    expect(codes('---\nouter:\n  x: 1\n  x: 2\n---\n')).toEqual(['duplicate-frontmatter-key']);
+    expect(codes('---\none:\n  x: 1\ntwo:\n  x: 2\n---\n')).toEqual([]);
+  });
+
+  it('leaves the key out of the message when it is not a plain key on its line', () => {
+    const [issue] = findSyntaxIssues('---\n? x\n: 1\n? x\n: 2\n---\n');
+    expect(issue?.code).toBe('duplicate-frontmatter-key');
+    expect(issue?.message).toBe('The key appears more than once, so Obsidian rejects the frontmatter and none of its properties apply.');
+  });
+
+  it('reports a later duplicate reference definition as a warning, matching labels case-insensitively', () => {
+    const content = '[x][r]\n\n[r]: first.md\n[R]:  second.md\n\n[ r ]: third.md "t"\n';
+    const issues = findSyntaxIssues(content);
+    expect(issues.map((issue) => [issue.code, issue.position.start.line])).toEqual([
+      ['duplicate-reference-definition', 3],
+      ['duplicate-reference-definition', 5]
+    ]);
+    expect(issues[0]?.position.start.offset).toBe(22);
+    expect(issues[0]?.position.end.offset).toBe(37);
+    expect(issues[0]?.message).toBe('The reference [R] is already defined on line 3, so this definition is ignored and its links use the first one.');
+    expect(issues.every((issue) => isWarningSyntaxIssue(issue) && issue.fix === null)).toBe(true);
+  });
+
+  it('accepts distinct reference labels and ignores footnotes, code, comments and definitions inside a paragraph', () => {
+    expect(codes('[a]: a.md\n[b]: b.md\n')).toEqual([]);
+    expect(codes('[^1]: note\n\n[^1]: again\n')).toEqual([]);
+    expect(codes('[a]: a.md\n\n```\n[a]: b.md\n```\n\n    [a]: c.md\n')).toEqual([]);
+    expect(codes('[a]: a.md\n\n%%\n[a]: b.md\n%%\n')).toEqual([]);
+    expect(codes('[a]: a.md\n\ntext\n[a]: b.md\n')).toEqual([]);
+    expect(codes('[a]: a.md\n\n[a]:\n')).toEqual([]);
+  });
+
+  it('reports a duplicate reference definition after frontmatter with CRLF line endings', () => {
+    const issues = findSyntaxIssues('---\r\nk: v\r\n---\r\n[a]: a.md\r\n[A]: b.md\r\n');
+    expect(issues.map((issue) => [issue.code, issue.position.start.offset, issue.position.end.offset])).toEqual([['duplicate-reference-definition', 27, 36]]);
   });
 
   it('ignores a note without closed frontmatter fences', () => {

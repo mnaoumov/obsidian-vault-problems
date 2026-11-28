@@ -31,5 +31,7 @@ await require('/demoSetup.ts').setTitleQuote(app, true);
 3. A code span with no closing backticks in its paragraph shows its backticks literally.
 4. A `%%` comment opener with no closer hides the rest of the note.
 5. A code block fence with no closing fence turns the rest of the note into code, so its links and headings stop working. Its quick fix adds the matching closing fence at the end of the note, with **Undo**.
+6. A frontmatter key that appears twice is reported at its second occurrence, because Obsidian then rejects the whole frontmatter and shows **Invalid properties**.
+7. A reference definition such as `[label]: Note.md` whose label an earlier definition already uses, compared without case, is a warning: Obsidian keeps the first one and ignores the later one.
 
 The checks skip fenced code blocks and code spans, and choose **syntax** in **Problem kind** to list only these problems. They read the note's text, so they work in Reading view, Live Preview and Source mode alike.

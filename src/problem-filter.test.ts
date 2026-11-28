@@ -8,7 +8,8 @@ import type { LinkProblem } from './link-model.ts';
 
 import {
   groupProblems,
-  isIgnoredPath
+  isIgnoredPath,
+  isWarningProblem
 } from './problem-filter.ts';
 
 function problem(path: string, offset: null | number, kind: LinkProblem['row']['kind'] = 'link'): LinkProblem {
@@ -16,6 +17,16 @@ function problem(path: string, offset: null | number, kind: LinkProblem['row']['
 }
 
 describe('Problems filters', () => {
+  it('rates a duplicate reference definition a warning and other syntax issues errors', () => {
+    const position = { end: { col: 0, line: 0, offset: 0 }, start: { col: 0, line: 0, offset: 0 } };
+    function syntax(code: 'duplicate-frontmatter-key' | 'duplicate-reference-definition'): LinkProblem {
+      return { ...problem('a.md', 0, 'syntax'), syntax: { code, fix: null, message: code, position } };
+    }
+    expect(isWarningProblem(syntax('duplicate-reference-definition'))).toBe(true);
+    expect(isWarningProblem(syntax('duplicate-frontmatter-key'))).toBe(false);
+    expect(isWarningProblem(problem('a.md', 0))).toBe(false);
+  });
+
   it('matches literal names and folders without treating regex syntax as a glob', () => {
     expect(isIgnoredPath('notes/a.md', ['notes'])).toBe(true);
     expect(isIgnoredPath('notes2/a.md', ['notes'])).toBe(false);
