@@ -47,6 +47,7 @@ import type {
 import type { PathCompatibilityScope } from './path-compatibility-component.ts';
 import type { SyntaxIssue } from './syntax-checks.ts';
 
+import { rankFragmentCandidates } from './fragment-candidates.ts';
 import { removeReference } from './remove-reference.ts';
 import { findSyntaxIssues } from './syntax-checks.ts';
 
@@ -238,7 +239,7 @@ export class ProblemFixes {
     const { app } = this.params;
     const fixes: ProblemFix[] = [];
     const cache = app.metadataCache.getFileCache(target);
-    for (const subpath of [...(cache?.headings ?? []).map((heading) => `#${heading.heading}`), ...Object.keys(cache?.blocks ?? {}).map((id) => `#^${id}`)]) {
+    for (const subpath of rankFragmentCandidates(missingSubpath, (cache?.headings ?? []).map((heading) => heading.heading), Object.keys(cache?.blocks ?? {}))) {
       fixes.push({ label: `Use ${target.path}${subpath}`, run: () => this.retarget([row], target.path, subpath) });
     }
     if (missingSubpath.startsWith('#^')) {

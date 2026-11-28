@@ -1,3 +1,4 @@
+// Cspell:ignore Instalation -- a deliberate misspelling of a heading
 import type {
   App as AppOriginal,
   CachedMetadata,
@@ -201,6 +202,19 @@ describe('Explicit quick fixes', () => {
     await expect(run('Create heading', fragment)).rejects.toThrow('heading already exists');
     await run('Use Missing.md#Existing', fragment);
     expect(await app.vault.read(ensureNonNullable(app.vault.getFileByPath('Source.md')))).toContain('#Existing');
+  });
+
+  it('lists the endpoint closest to the missing heading first', async () => {
+    const { app, caches, problem, service } = await fixture('[[Missing#Instalation]]');
+    const content = '# Overview\n# Usage\n# Installation\n';
+    const target = await app.vault.create('Missing.md', content);
+    caches.set(target.path, metadata(content));
+    const actions = await service.getFixes({ ...problem, row: { ...problem.row, targetPath: target.path } });
+    expect(actions.map((fix) => fix.label).filter((label) => label.startsWith('Use '))).toEqual([
+      'Use Missing.md#Installation',
+      'Use Missing.md#Usage',
+      'Use Missing.md#Overview'
+    ]);
   });
 
   it('creates nested notes and rejects non-note and invalid fragment creation', async () => {
