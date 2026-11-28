@@ -43,6 +43,12 @@ describe('Problems filters', () => {
     expect(groupProblems(items, { folder: '', ignoredPaths: ['**/x.md'], kind: '' }).size).toBe(0);
   });
 
+  it('hides the planned-note problems it is given, and nothing else', () => {
+    const items = [problem('a.md', 1), problem('a.md', 2), problem('b.md', 1)];
+    const groups = groupProblems(items, { folder: '', ignoredPaths: [], kind: '', plannedProblems: new Set(items.slice(1)) });
+    expect([...groups.values()].flat()).toEqual([items[0]]);
+  });
+
   it('groups by kind in heading order, drops empty kinds, and keeps note order inside a kind', () => {
     const items = [problem('b/x.md', 4, 'syntax'), problem('b/x.md', 1), problem('a/x.md', 9), problem('a/x.md', null, 'frontmatter')];
     const byKind = groupProblems(items, { folder: '', ignoredPaths: [], kind: '' }, 'kind');

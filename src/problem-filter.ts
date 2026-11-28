@@ -7,6 +7,10 @@ export interface ProblemFilter {
   readonly folder: string;
   readonly ignoredPaths: readonly string[];
   readonly kind: string;
+  /**
+  The problems to hide as planned notes: links to a missing file with no candidate it may have meant.
+  */
+  readonly plannedProblems?: ReadonlySet<LinkProblem>;
 }
 
 /**
@@ -45,7 +49,10 @@ export function groupProblems(problems: readonly LinkProblem[], filter: ProblemF
   const folder = filter.folder.trim().replaceAll(/^\/+|\/+$/gu, '');
   for (const problem of [...problems].sort((left, right) => left.row.sourcePath.localeCompare(right.row.sourcePath) || (left.row.position?.start.offset ?? -1) - (right.row.position?.start.offset ?? -1))) {
     const path = problem.row.sourcePath;
-    if (isIgnoredPath(path, filter.ignoredPaths) || (filter.kind && problem.row.kind !== filter.kind) || (folder && !path.startsWith(`${folder}/`))) {
+    if (
+      isIgnoredPath(path, filter.ignoredPaths) || (filter.kind && problem.row.kind !== filter.kind) || (folder && !path.startsWith(`${folder}/`))
+      || filter.plannedProblems?.has(problem)
+    ) {
       continue;
     }
     const key = grouping === 'kind' ? problem.row.kind : path;
